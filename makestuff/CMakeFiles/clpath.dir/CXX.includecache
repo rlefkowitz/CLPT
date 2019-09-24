@@ -1,0 +1,32 @@
+#IncludeRegexLine: ^[ 	]*[#%][ 	]*(include|import)[ 	]*[<"]([^">]+)([">])
+
+#IncludeRegexScan: ^.*$
+
+#IncludeRegexComplain: ^$
+
+#IncludeRegexTransform: 
+
+/Users/ryanlefkowitz/Programming/OpenCL/CLPT/src/camera.cpp
+camera.h
+/Users/ryanlefkowitz/Programming/OpenCL/CLPT/src/camera.h
+
+/Users/ryanlefkowitz/Programming/OpenCL/CLPT/src/camera.h
+linear_algebra.h
+/Users/ryanlefkowitz/Programming/OpenCL/CLPT/src/linear_algebra.h
+
+/Users/ryanlefkowitz/Programming/OpenCL/CLPT/src/hdrloader/hdrloader.cpp
+hdrloader.h
+/Users/ryanlefkowitz/Programming/OpenCL/CLPT/src/hdrloader/hdrloader.h
+math.h
+-
+memory.h
+-
+stdio.h
+-
+
+/Users/ryanlefkowitz/Programming/OpenCL/CLPT/src/hdrloader/hdrloader.h
+
+/Users/ryanlefkowitz/Programming/OpenCL/CLPT/src/linear_algebra.h
+math.h
+-
+

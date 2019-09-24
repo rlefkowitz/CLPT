@@ -1,0 +1,93 @@
+Determining if the CL_VERSION_2_2 exist failed with the following output:
+Change Dir: /Users/ryanlefkowitz/Programming/OpenCL/CLPT/makestuff/CMakeFiles/CMakeTmp
+
+Run Build Command:"/usr/local/bin/gmake" "cmTC_e21ce/fast"
+/usr/local/bin/gmake -f CMakeFiles/cmTC_e21ce.dir/build.make CMakeFiles/cmTC_e21ce.dir/build
+gmake[1]: Entering directory '/Users/ryanlefkowitz/Programming/OpenCL/CLPT/makestuff/CMakeFiles/CMakeTmp'
+Building C object CMakeFiles/cmTC_e21ce.dir/CheckSymbolExists.c.o
+/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/cc    -o CMakeFiles/cmTC_e21ce.dir/CheckSymbolExists.c.o   -c /Users/ryanlefkowitz/Programming/OpenCL/CLPT/makestuff/CMakeFiles/CMakeTmp/CheckSymbolExists.c
+/Users/ryanlefkowitz/Programming/OpenCL/CLPT/makestuff/CMakeFiles/CMakeTmp/CheckSymbolExists.c:8:19: error: use of undeclared identifier 'CL_VERSION_2_2'
+  return ((int*)(&CL_VERSION_2_2))[argc];
+                  ^
+1 error generated.
+gmake[1]: *** [CMakeFiles/cmTC_e21ce.dir/build.make:66: CMakeFiles/cmTC_e21ce.dir/CheckSymbolExists.c.o] Error 1
+gmake[1]: Leaving directory '/Users/ryanlefkowitz/Programming/OpenCL/CLPT/makestuff/CMakeFiles/CMakeTmp'
+gmake: *** [Makefile:121: cmTC_e21ce/fast] Error 2
+
+File /Users/ryanlefkowitz/Programming/OpenCL/CLPT/makestuff/CMakeFiles/CMakeTmp/CheckSymbolExists.c:
+/* */
+#include </System/Library/Frameworks/OpenCL.framework/Headers/cl.h>
+
+int main(int argc, char** argv)
+{
+  (void)argv;
+#ifndef CL_VERSION_2_2
+  return ((int*)(&CL_VERSION_2_2))[argc];
+#else
+  (void)argc;
+  return 0;
+#endif
+}
+
+Determining if the CL_VERSION_2_1 exist failed with the following output:
+Change Dir: /Users/ryanlefkowitz/Programming/OpenCL/CLPT/makestuff/CMakeFiles/CMakeTmp
+
+Run Build Command:"/usr/local/bin/gmake" "cmTC_38106/fast"
+/usr/local/bin/gmake -f CMakeFiles/cmTC_38106.dir/build.make CMakeFiles/cmTC_38106.dir/build
+gmake[1]: Entering directory '/Users/ryanlefkowitz/Programming/OpenCL/CLPT/makestuff/CMakeFiles/CMakeTmp'
+Building C object CMakeFiles/cmTC_38106.dir/CheckSymbolExists.c.o
+/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/cc    -o CMakeFiles/cmTC_38106.dir/CheckSymbolExists.c.o   -c /Users/ryanlefkowitz/Programming/OpenCL/CLPT/makestuff/CMakeFiles/CMakeTmp/CheckSymbolExists.c
+/Users/ryanlefkowitz/Programming/OpenCL/CLPT/makestuff/CMakeFiles/CMakeTmp/CheckSymbolExists.c:8:19: error: use of undeclared identifier 'CL_VERSION_2_1'
+  return ((int*)(&CL_VERSION_2_1))[argc];
+                  ^
+1 error generated.
+gmake[1]: *** [CMakeFiles/cmTC_38106.dir/build.make:66: CMakeFiles/cmTC_38106.dir/CheckSymbolExists.c.o] Error 1
+gmake[1]: Leaving directory '/Users/ryanlefkowitz/Programming/OpenCL/CLPT/makestuff/CMakeFiles/CMakeTmp'
+gmake: *** [Makefile:121: cmTC_38106/fast] Error 2
+
+File /Users/ryanlefkowitz/Programming/OpenCL/CLPT/makestuff/CMakeFiles/CMakeTmp/CheckSymbolExists.c:
+/* */
+#include </System/Library/Frameworks/OpenCL.framework/Headers/cl.h>
+
+int main(int argc, char** argv)
+{
+  (void)argv;
+#ifndef CL_VERSION_2_1
+  return ((int*)(&CL_VERSION_2_1))[argc];
+#else
+  (void)argc;
+  return 0;
+#endif
+}
+
+Determining if the CL_VERSION_2_0 exist failed with the following output:
+Change Dir: /Users/ryanlefkowitz/Programming/OpenCL/CLPT/makestuff/CMakeFiles/CMakeTmp
+
+Run Build Command:"/usr/local/bin/gmake" "cmTC_0904e/fast"
+/usr/local/bin/gmake -f CMakeFiles/cmTC_0904e.dir/build.make CMakeFiles/cmTC_0904e.dir/build
+gmake[1]: Entering directory '/Users/ryanlefkowitz/Programming/OpenCL/CLPT/makestuff/CMakeFiles/CMakeTmp'
+Building C object CMakeFiles/cmTC_0904e.dir/CheckSymbolExists.c.o
+/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/cc    -o CMakeFiles/cmTC_0904e.dir/CheckSymbolExists.c.o   -c /Users/ryanlefkowitz/Programming/OpenCL/CLPT/makestuff/CMakeFiles/CMakeTmp/CheckSymbolExists.c
+/Users/ryanlefkowitz/Programming/OpenCL/CLPT/makestuff/CMakeFiles/CMakeTmp/CheckSymbolExists.c:8:19: error: use of undeclared identifier 'CL_VERSION_2_0'
+  return ((int*)(&CL_VERSION_2_0))[argc];
+                  ^
+1 error generated.
+gmake[1]: *** [CMakeFiles/cmTC_0904e.dir/build.make:66: CMakeFiles/cmTC_0904e.dir/CheckSymbolExists.c.o] Error 1
+gmake[1]: Leaving directory '/Users/ryanlefkowitz/Programming/OpenCL/CLPT/makestuff/CMakeFiles/CMakeTmp'
+gmake: *** [Makefile:121: cmTC_0904e/fast] Error 2
+
+File /Users/ryanlefkowitz/Programming/OpenCL/CLPT/makestuff/CMakeFiles/CMakeTmp/CheckSymbolExists.c:
+/* */
+#include </System/Library/Frameworks/OpenCL.framework/Headers/cl.h>
+
+int main(int argc, char** argv)
+{
+  (void)argv;
+#ifndef CL_VERSION_2_0
+  return ((int*)(&CL_VERSION_2_0))[argc];
+#else
+  (void)argc;
+  return 0;
+#endif
+}
+
