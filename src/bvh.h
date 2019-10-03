@@ -54,7 +54,7 @@ struct BVHNode {
     
     inline Vec3 span() const { return (box[1] - box[0]); }
     
-    float sa() const { Vec3 sp = span(); return abs(2.0f*(sp.x*sp.y+sp.y*sp.z+sp.x*sp.z)); }
+    inline float sa() const { Vec3 sp = span(); return abs(2.0f*(sp.x*sp.y+sp.y*sp.z+sp.x*sp.z)); }
 };
 
 struct Bin {
@@ -150,22 +150,7 @@ void build(vector<BVHNode> &bvh, vector<Triangle> &triangles, vector<Triangle> &
 //        cout << tris.size() << endl;
         node.isLeaf = 1;
         
-        vector<TriNumPair> tnps;
-        tnps.clear();
-        
-        for(Triangle tri : tris) {
-            Vec3 nuv0 = cross(tri.v1 - tri.v0, tri.v2 - tri.v0);
-            float nuv0len = sqrtf(nuv0.lengthsq());
-            tnps.push_back(TriNumPair(tri, 0.5*nuv0len));
-        }
-        tris.clear();
-        
-        sort(tnps.begin(), tnps.end(), greater<TriNumPair>());
-        
-        for(TriNumPair tnp : tnps)
-            tris.push_back(tnp.tri);
-        
-        tnps.clear();
+        sort(tris.begin(), tris.end(), greater<Triangle>());
         
         node.child1 = flatTriangles.size();
         flatTriangles.insert(flatTriangles.end(), tris.begin(), tris.end());
@@ -209,7 +194,7 @@ void build(vector<BVHNode> &bvh, vector<Triangle> &triangles, vector<Triangle> &
     
     vector<Bin> bins(res);
     
-    float testinterval = max / (float) res;
+    float testinterval = max / ((float) res);
     float testpos = centroidbox.box[0][axis] + testinterval;
     
     vector<Triangle> right_tris;
@@ -217,18 +202,11 @@ void build(vector<BVHNode> &bvh, vector<Triangle> &triangles, vector<Triangle> &
     vector<Triangle> left_tris;
     left_tris.clear();
     
-    vector<TriNumPair> tnps;
-    tnps.clear();
-        
-    for(Triangle tri : tris)
-        tnps.push_back(TriNumPair(tri, triBoxMP(tri)[axis]));
+    bvhaxis = axis;
     
-    sort(tnps.begin(), tnps.end());
+    sort(tris.begin(), tris.end());
     
-    for(TriNumPair tnp : tnps)
-        right_tris.push_back(tnp.tri);
-    
-    tnps.clear();
+    right_tris.insert(right_tris.end(), tris.begin(), tris.end());
     
     int rps = right_tris.size();
     
@@ -236,7 +214,7 @@ void build(vector<BVHNode> &bvh, vector<Triangle> &triangles, vector<Triangle> &
         
         bins[i] = initBin();
         
-        while(rps > 0 && triBoxMP(right_tris[0])[axis] <= testpos) {
+        while(rps > 0 && right_tris[0].boxMP(axis) <= testpos) {
             addPrimitive(bins[i], right_tris[0]);
             right_tris.erase(right_tris.begin());
             rps--;
@@ -293,22 +271,7 @@ void build(vector<BVHNode> &bvh, vector<Triangle> &triangles, vector<Triangle> &
     if(bs.axis == -1) {
         node.isLeaf = 1;
         
-        vector<TriNumPair> tnps;
-        tnps.clear();
-        
-        for(Triangle tri : tris) {
-            Vec3 nuv0 = cross(tri.v1 - tri.v0, tri.v2 - tri.v0);
-            float nuv0len = sqrtf(nuv0.lengthsq());
-            tnps.push_back(TriNumPair(tri, 0.5*nuv0len));
-        }
-        tris.clear();
-        
-        sort(tnps.begin(), tnps.end(), greater<TriNumPair>());
-        
-        for(TriNumPair tnp : tnps)
-            tris.push_back(tnp.tri);
-        
-        tnps.clear();
+        sort(tris.begin(), tris.end(), greater<Triangle>());
         
         node.child1 = flatTriangles.size();
         flatTriangles.insert(flatTriangles.end(), tris.begin(), tris.end());
@@ -323,6 +286,8 @@ void build(vector<BVHNode> &bvh, vector<Triangle> &triangles, vector<Triangle> &
         bvh.push_back(node);
         return;
     }
+    
+    node.isLeaf = bs.axis << 1;
     
     int thisidx = bvh.size();
     bvh.push_back(node);

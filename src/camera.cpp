@@ -1,3 +1,4 @@
+#include <iostream>
 #include "camera.h"
 
 // constructor and default values
@@ -81,7 +82,6 @@ void InteractiveCamera::buildRenderCamera(Camera* renderCamera){
 	viewDirection = directionToCamera;
     Vec3 eyePosition = centerPosition;// + directionToCamera * radius;
 	//Vec3 eyePosition = centerPosition; // rotate camera from stationary viewpoint
-
 	renderCamera->pos = eyePosition;
 	renderCamera->fd = viewDirection;
     Vec3 right = cross(Vec3(0, 1, 0), viewDirection);
@@ -90,6 +90,7 @@ void InteractiveCamera::buildRenderCamera(Camera* renderCamera){
     renderCamera->up.normalize();
 	renderCamera->aperture_radius = apertureRadius;
 	renderCamera->focal_distance = focalDistance;
+//    printf("(%f, %f, %f), (%f, %f, %f), (%f, %f, %f)\n", eyePosition.x, eyePosition.y, eyePosition.z, renderCamera->fd.x, renderCamera->fd.y, renderCamera->fd.z, renderCamera->up.x, renderCamera->up.y, renderCamera->up.z);
 }
 
 float mod(float x, float y) { // Does this account for -y ???

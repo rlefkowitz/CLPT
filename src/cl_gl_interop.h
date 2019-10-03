@@ -5,7 +5,7 @@
 #include <OpenGL/OpenGL.h>
 #include <OpenGL/gl.h>
 #include <OpenGL/glext.h>
-#define GL_SHARING_EX TENSION "cl_APPLE_gl_sharing"
+#define GL_SHARING_EXTENSION "cl_APPLE_gl_sharing"
 #include "cl.hpp"
 #include "user_interaction.h"
 #include <time.h>
@@ -32,7 +32,7 @@ void initGL(int argc, char** argv){
 	// specify the initial window position
 	glutInitWindowPosition(50, 50);
 	// specify the initial window size
-	glutInitWindowSize(window_width, window_height);
+	glutInitWindowSize(window_width - 1, window_height);
 	// create the window and set title
 	glutCreateWindow("Basic OpenCL path tracer");
 
@@ -86,7 +86,7 @@ void drawGL(){
     frame_count++;
     final_time = time(NULL);
     if(final_time - initial_time > 0) {
-        std::cout << "FPS: " << frame_count / (final_time - initial_time) << std::endl;
+        printf("FPS: %d\n", frame_count / (final_time - initial_time));
         frame_count = 0;
         initial_time = final_time;
     }

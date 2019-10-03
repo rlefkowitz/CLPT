@@ -64,13 +64,13 @@ typedef struct Camera {
 
 static float rand(unsigned int *seed) {
     unsigned int x = *seed;
-    x ^= x >> 13;
-    x ^= x << 17;
-    x ^= x >> 5;
+    x ^= x << 13;
+    x ^= x >> 17;
+    x ^= x << 5;
     *seed = x;
     return as_float((x & 0x007FFFFF) | 0x3F800000) - 1.0;
     /**seed = ((*seed) * 16807) % 2147483647;
-    return (float)(*seed - 1) / 2147483646.0f;*/
+     return (float)(*seed - 1) / 2147483646.0f;*/
 }
 
 float3 tonemapFilmic(const float3 f) {
@@ -90,7 +90,7 @@ float2 samplePoly(unsigned int *seed) {
     float st = native_sin(t);
     float2 a0 = (float2)(ct, st);
     float2 a1 = (float2)(ct*cba - st*sba, st*cba + ct*sba);
-    return r1*(a0*(1.0f - r2) + a1*r2);
+    return (r1 * (a0*(1.0f - r2) + a1*r2));
 }
 
 
@@ -98,13 +98,11 @@ Ray createCamRay(const int x_coord, const int y_coord, const int width, const in
                  unsigned int *seed, __constant const Camera* cam) {
     
     float offx = rand(seed);
-    
     float offy = rand(seed);
     
+    float ih = native_recip((float) height);
     
-    float ih = 1.0f / height;
-    
-    float har = 0.5f * (float) width / height;
+    float har = native_divide((float) width, (float) (height << 1));
     float x0 = ih * (x_coord + offx - 0.5f) - har;
     float y0 = 0.5f - ih * (y_coord + offy - 0.5f);
     
@@ -120,7 +118,7 @@ Ray createCamRay(const int x_coord, const int y_coord, const int width, const in
         float2 pt = cam->aperture_radius*samplePoly(seed);
         float FdR = dot(fd, ray.dir);
         float3 aptOffset = up*pt.y + rt*pt.x;
-        float3 dn = normalize(ray.dir*(cam->focal_distance/FdR) - aptOffset);
+        float3 dn = normalize(ray.dir*native_divide(cam->focal_distance, FdR) - aptOffset);
         ray.origin = cam->pos + aptOffset;
         ray.dir = dn;
     }
@@ -130,7 +128,7 @@ Ray createCamRay(const int x_coord, const int y_coord, const int width, const in
 
 float3 orientTo(float3 a, float3 N) {
     float sign = copysign(1.0f, N.z);
-    const float f = -1.0f / (sign + N.z);
+    const float f = -native_recip(sign + N.z);
     const float g = N.x * N.y * f;
     const float3 u = (float3)(1.0f + sign * N.x * N.x * f, sign * g, -sign * N.x);
     const float3 v = (float3)(g, sign + N.y * N.y * f, -N.y);
@@ -145,14 +143,14 @@ float3 cosineRandHemi(const float3 N, const float u1, const float u2) {
     float y = r2s * native_sin(r1);
     float z = native_sqrt(max(0.0f, 1.0f - r2));
     float sign = copysign(1.0f, N.z);
-    const float a = -1.0f / (sign + N.z);
+    const float a = -native_recip(sign + N.z);
     const float b = N.x * N.y * a;
     const float3 u = (float3)(1.0f + sign * N.x * N.x * a, sign * b, -sign * N.x);
     const float3 v = (float3)(b, sign + N.y * N.y * a, -N.y);
     return x * u + y * v + z * N;
 }
 
-bool intersect_sphere(const Sphere* sphere, const Ray* ray, float3* point, float3* normal, float* t) {
+bool intersect_sphere(__global Sphere* sphere, const Ray* ray, float3* point, float3* normal, float* t) {
     float3 rayToCenter = sphere->pos - ray->origin;
     float b = dot(rayToCenter, ray->dir);
     float c = dot(rayToCenter, rayToCenter) - sphere->radius*sphere->radius;
@@ -174,25 +172,25 @@ bool intersect_sphere(const Sphere* sphere, const Ray* ray, float3* point, float
     return true;
 }
 
-bool intersect_triangle(const Triangle* triangle, const Ray* ray, float3* point, float3* normal, float* t, const bool cull) {
+bool intersect_triangle(__global Triangle *triangle, const Ray* ray, float3* point, float3* normal, float* t, const bool cull) {
     
     /*float td = dot(ray->dir, triangle->vn);
-    if(-td < eps && m->type != 2)
-        return false;
-    float temp = dot(triangle->v0 - ray->origin, triangle->vn) / td;
-    if(temp >= *t || temp < eps) return false;
-    
-    float3 x = ray->origin + temp*ray->dir;
-    
-    float u = dot(triangle->vu, x);
-    if(u < 0 || u > 1) return false;
-    
-    float v = dot(triangle->vv, x);
-    if(v < 0 || u + v > 1) return false;
-    
-    *point = x;
-    *t = temp;
-    return true;*/
+     if(-td < eps && m->type != 2)
+     return false;
+     float temp = dot(triangle->v0 - ray->origin, triangle->vn) / td;
+     if(temp >= *t || temp < eps) return false;
+     
+     float3 x = ray->origin + temp*ray->dir;
+     
+     float u = dot(triangle->vu, x);
+     if(u < 0 || u > 1) return false;
+     
+     float v = dot(triangle->vv, x);
+     if(v < 0 || u + v > 1) return false;
+     
+     *point = x;
+     *t = temp;
+     return true;*/
     
     float3 v0v1 = triangle->v1 - triangle->v0;
     float3 v0v2 = triangle->v2 - triangle->v0;
@@ -201,9 +199,9 @@ bool intersect_triangle(const Triangle* triangle, const Ray* ray, float3* point,
     
     /* Backface culling */
     /*if(det < eps && false) return false;*/
-     
-    float invDet = 1.0f / det;
-     
+    
+    float invDet = native_recip(det);
+    
     float3 tvec = ray->origin - triangle->v0;
     float u = dot(tvec, pvec) * invDet;
     if(u < 0 || u > 1) return false;
@@ -211,7 +209,7 @@ bool intersect_triangle(const Triangle* triangle, const Ray* ray, float3* point,
     float3 qvec = cross(tvec, v0v1);
     float v = dot(ray->dir, qvec) * invDet;
     if(v < 0 || u + v > 1) return false;
-     
+    
     float temp = dot(v0v2, qvec) * invDet;
     if(temp < eps || temp > *t) return false;
     
@@ -243,10 +241,22 @@ bool intersect_aabb(const BVHNode* b, const Ray* r, float* t) {
     float3 tsmaller = fmin(t0s, t1s);
     float3 tbigger = fmax(t0s, t1s);
     
-    float tmin = fmax(tsmaller[0], fmax(tsmaller[1], tsmaller[2]));
-    float tmax = fmin(tbigger[0], fmin(tbigger[1], tbigger[2]));
+    float tmin = fmax(eps, fmax(tsmaller[0], fmax(tsmaller[1], tsmaller[2])));
+    float tmax = fmin(*t, fmin(tbigger[0], fmin(tbigger[1], tbigger[2])));
     
-    return (tmin < tmax && tmax >= eps && tmin < *t);
+    return (tmin <= tmax);
+}
+
+bool intersect_aabb_lw(const BVHNode* b, const Ray* r, float* t) {
+    float3 invD = r->inv_dir;
+    float3 t0s = (b->box[0] - r->origin) * invD;
+    float3 t1s = (b->box[1] - r->origin) * invD;
+    
+    float3 tsmaller = fmin(t0s, t1s);
+    
+    float tmin = fmax(eps, fmax(tsmaller[0], fmax(tsmaller[1], tsmaller[2])));
+    
+    return (tmin <= *t);
 }
 
 float intersect_aabb_dist(const BVHNode* b, const Ray* r, float* t) {
@@ -257,138 +267,146 @@ float intersect_aabb_dist(const BVHNode* b, const Ray* r, float* t) {
     float3 tsmaller = fmin(t0s, t1s);
     float3 tbigger = fmax(t0s, t1s);
     
-    float tmin = fmax(tsmaller[0], fmax(tsmaller[1], tsmaller[2]));
-    float tmax = fmin(tbigger[0], fmin(tbigger[1], tbigger[2]));
+    float tmin = fmax(eps, fmax(tsmaller[0], fmax(tsmaller[1], tsmaller[2])));
+    float tmax = fmin(*t, fmin(tbigger[0], fmin(tbigger[1], tbigger[2])));
     
-    return (tmin <= tmax && tmax >= eps && tmin < *t) ? tmin : INF;
+    return (tmin <= tmax) ? tmin : INF;
 }
 
 void intersect_bvh(__global Triangle* triangles, __global BVHNode* nodes, const Ray* ray, float3* point,
                    float3* normal, float* t, const unsigned int triangle_count, const unsigned int node_count,
                    int* triangle_id, int* sphere_id) {
     
+    int steps = 0;
     BVHNode current = nodes[0];
+    
+    if(!intersect_aabb(&current, ray, t))
+        return;
+    
     int currentIdx = 0;
     int lastIdx = -1;
     unsigned int depth = 0;
     unsigned int branch = 0;
     bool retrieved_current = true;
+    bool goingUp = false;
+    bool swapped;
+    int child1;
+    int child2;
+    int child1_mod;
+    int child2_mod;
     
-    if(intersect_aabb(&current, ray, t)) {
+    while(steps < 100000) {
+        if(goingUp) {
+            if(currentIdx < 1)
+                break;
             
-        while(depth >= 0) {
-            if(!retrieved_current)
-                current = nodes[currentIdx];
-            retrieved_current = false;
-            /*
-             BVH Traversal: Either of the first two conditions are true if currently moving up the tree
-             */
-            int child1 = current.child1;
-            int child2 = current.child2;
+            lastIdx = currentIdx;
+            currentIdx = current.parent;
+            branch &= (2 << depth) - 1;
+            depth--;
+        }
+        
+        if(!retrieved_current)
+            current = nodes[currentIdx];
+        retrieved_current = false;
+        /*
+         BVH Traversal: Either of the first two conditions are true if currently moving up the tree
+         */
+        child1 = current.child1;
+        child2 = current.child2;
+        
+        goingUp = false;
+        
+        if(currentIdx > lastIdx) {
+            if(current.isLeaf != 1) {
+                BVHNode c1 = nodes[child1];
+                BVHNode c2 = nodes[child2];
+                float dist1 = intersect_aabb_dist(&c1, ray, t);
+                float dist2 = intersect_aabb_dist(&c2, ray, t);
+                bool hit1 = dist1 != INF;
+                bool hit2 = dist2 != INF;
                 
-            if(current.isLeaf == 0) {
-                bool swapped = (bool) ((2 << depth) & branch);
-                int child1_mod = swapped ? child2 : child1;
-                int child2_mod = swapped ? child1 : child2;
-                    
-                if(lastIdx == child2_mod) {
+                if(hit1 && hit2) {
                     /*
-                     If done parsing right node, done with entire branch
+                     Both distances are finite
                      */
-                    if(currentIdx < 1)
-                        break;
-                        
+                    retrieved_current = true;
+                    
+                    bool reverse = dist2 < dist1;
+                    branch |= (reverse << 1) << depth;
+                    
                     lastIdx = currentIdx;
-                    currentIdx = current.parent;
-                    branch &= (2 << depth) - 1;
-                    depth--;
-                        
-                } else if(lastIdx == child1_mod) {
-                    lastIdx = currentIdx;
-                    currentIdx = child2_mod;
+                    currentIdx = reverse ? child2 : child1;
+                    current = reverse ? c2 : c1;
                     depth++;
-                        
+                    
+                } else if(hit1) {
+                    /*
+                     dist2 is infinite and dist1 is finite
+                     */
+                    retrieved_current = true;
+                    
+                    branch |= (2 << depth);
+                    lastIdx = currentIdx;
+                    currentIdx = child1;
+                    current = c1;
+                    depth++;
+                    
+                } else if(hit2) {
+                    /*
+                     dist1 is infinite and dist2 is finite
+                     */
+                    retrieved_current = true;
+                    
+                    lastIdx = currentIdx;
+                    currentIdx = child2;
+                    current = c2;
+                    depth++;
+                    
                 } else {
-                    BVHNode c1 = nodes[child1];
-                    BVHNode c2 = nodes[child2];
-                    const float dist1 = intersect_aabb_dist(&c1, ray, t);
-                    const float dist2 = intersect_aabb_dist(&c2, ray, t);
-                    const bool hit1 = dist1 != INF;
-                    const bool hit2 = dist2 != INF;
-                        
-                    if(hit1 && hit2) {
-                        /*
-                         Both distances are finite
-                         */
-                        retrieved_current = true;
-                            
-                        bool reverse = dist2 < dist1;
-                        if(reverse) branch |= (2 << depth);
-                            
-                        lastIdx = currentIdx;
-                        currentIdx = reverse ? child2 : child1;
-                        current = reverse ? c2 : c1;
-                        depth++;
-                            
-                    } else if(!hit2 && hit1) {
-                        /*
-                         dist2 is infinite and dist1 is finite
-                         */
-                        retrieved_current = true;
-                            
-                        branch |= (2 << depth);
-                        lastIdx = currentIdx;
-                        currentIdx = child1;
-                        current = c1;
-                        depth++;
-                        
-                    } else if(!hit1 && hit2) {
-                        /*
-                         dist1 is infinite and dist2 is finite
-                         */
-                        retrieved_current = true;
-                            
-                        lastIdx = currentIdx;
-                        currentIdx = child2;
-                        current = c2;
-                        depth++;
-                            
-                    } else {
-                        /*
-                         Both distances are infinite
-                         */
-                            
-                        lastIdx = currentIdx;
-                        currentIdx = current.parent;
-                        branch &= (2 << depth) - 1;
-                        depth--;
-                    }
+                    /*
+                     Both distances are infinite
+                     */
+                    goingUp = true;
                 }
             } else {
-                    
+                
                 for (int i = child1; i < child2; i++)  {
-                        
-                    Triangle triangle = triangles[i];
-                        
-                    if(intersect_triangle(&triangle, ray, point, normal, t, false)) {
+                    
+                    if(intersect_triangle(&triangles[i], ray, point, normal, t, false)) {
                         *triangle_id = i;
                         *sphere_id = -1;
                     }
-                        
-                }
                     
-                lastIdx = currentIdx;
-                currentIdx = current.parent;
-                branch &= (2 << depth) - 1;
-                depth--;
+                }
                 
+                goingUp = true;
             }
+            steps++;
+            continue;
         }
+        
+        swapped = (2 << depth) & branch;
+        child1_mod = swapped ? child2 : child1;
+        child2_mod = swapped ? child1 : child2;
+        
+        if(lastIdx == child2_mod) {
+            /*
+             If done parsing right node, done with entire branch
+             */
+            goingUp = true;
+            
+        } else if(lastIdx == child1_mod) {
+            lastIdx = currentIdx;
+            currentIdx = child2_mod;
+            depth++;
+        }
+        steps++;
     }
 }
 
 bool intersect_scene(__global Sphere* spheres, __global Triangle* triangles, __global BVHNode* nodes,
-                     __global Material* materials, const Ray* ray, float3* point, float3* normal, float* t,
+                     __constant Material* materials, const Ray* ray, float3* point, float3* normal, float* t,
                      Material* m, const unsigned int sphere_count, const unsigned int triangle_count,
                      const unsigned int node_count, const unsigned int material_count) {
     
@@ -400,9 +418,7 @@ bool intersect_scene(__global Sphere* spheres, __global Triangle* triangles, __g
     
     for (unsigned int i = 0; i < sphere_count; i++)  {
         
-        Sphere sphere = spheres[i];
-        
-        if(intersect_sphere(&sphere, ray, point, normal, t)) {
+        if(intersect_sphere(&spheres[i], ray, point, normal, t)) {
             sphere_id = i;
         }
     }
@@ -415,7 +431,7 @@ bool intersect_scene(__global Sphere* spheres, __global Triangle* triangles, __g
     if(sphere_id != -1) {
         int i = sphere_id;
         *point = ray->origin + (*t)*ray->dir;
-        *normal = (*point - spheres[i].pos) / spheres[i].radius;
+        *normal = native_divide(*point - spheres[i].pos, spheres[i].radius);
         *m = materials[spheres[i].mtlidx];
     } else if(triangle_id != -1) {
         int i = triangle_id;
@@ -469,8 +485,8 @@ float GGX_G1(float3 v, float3 m, float3 n, float a_g) {
     if(dot(v, m)*cosTheta <= 0.0f) {
         return 0.0f;
     }
-    float tan2Theta = 1.0f / (cosTheta*cosTheta) - 1.0f;
-    return (2.0f / (1.0f + native_sqrt(1.0f + a_g*a_g*tan2Theta)));
+    float tan2Theta = native_recip(cosTheta*cosTheta) - 1.0f;
+    return native_divide(2.0f, 1.0f + native_sqrt(1.0f + a_g*a_g*tan2Theta));
 }
 
 float GGX_G(float3 i, float3 o, float3 m, float3 n, float a_g) {
@@ -482,7 +498,7 @@ float GGX_G(float3 i, float3 o, float3 m, float3 n, float a_g) {
  
  Plastic BRDF Functions
  
-*/
+ */
 
 float plastic_F(float3 i, float3 m) {
     float c = fabs(dot(i, m));
@@ -491,8 +507,8 @@ float plastic_F(float3 i, float3 m) {
         return 1.0f;
     }
     g = native_sqrt(g);
-    float k = (c * (g + c) - 1.0f) / (c * (g - c) + 1.0f);
-    float a = 0.5f * (g - c) * (g - c) / ((g + c) * (g + c));
+    float k = native_divide(c * (g + c) - 1.0f, c * (g - c) + 1.0f);
+    float a = native_divide(0.5f * (g - c) * (g - c), (g + c) * (g + c));
     float b = 1.0f + k * k;
     return (a * b);
 }
@@ -507,7 +523,7 @@ void plastic_brdf(unsigned int *seed, float3 n, float3 wo, float3* kd, float3* w
         epsilon = 0.9999f;
     }
     
-    float xt = a_g*native_sqrt(epsilon / (1.0f - epsilon));
+    float xt = a_g*native_sqrt(native_divide(epsilon, 1.0f - epsilon));
     float ct = native_rsqrt(1.0f + xt*xt);
     float st = xt*ct;
     float phi = 2.0f*PI*rand(seed);
@@ -531,7 +547,7 @@ void plastic_brdf(unsigned int *seed, float3 n, float3 wo, float3* kd, float3* w
     }
     
     
-    *brdf = fabs(idm / (dot(i, n)*ct)) * GGX_G(i, *wr, m, n, a_g);
+    *brdf = fabs(native_divide(idm, dot(i, n)*ct)) * GGX_G(i, *wr, m, n, a_g);
     
 }
 
@@ -545,16 +561,16 @@ void plastic_brdf(unsigned int *seed, float3 n, float3 wo, float3* kd, float3* w
 
 float dielectric_F(float3 i, float3 m, float n_i, float n_t) {
     float c = fabs(dot(i, m));
-    float g = n_t*n_t / (n_i*n_i) - 1.0f + c*c;
+    float g = native_divide(n_t*n_t, n_i*n_i) - 1.0f + c*c;
     if(g < 0.0f)
         return 1.0f;
     g = native_sqrt(g);
     float a0 = (g-c);
     float a1 = (g+c);
-    float a = 0.5f*a0*a0 / (a1*a1);
+    float a = native_divide(a0*a0, 2.0f*a1*a1);
     float b0 = c*a1 - 1.0f;
     float b1 = c*a0 + 1.0f;
-    float b = 1.0f + b0*b0 / (b1*b1);
+    float b = 1.0f + native_divide(b0*b0, b1*b1);
     return a*b;
 }
 
@@ -571,7 +587,7 @@ void dielectric_brdf(unsigned int *seed, float3 n, float3 wo, float3* kd, float3
     }
     float a_g = roughness;
     float epsilon = rand(seed);
-    float xt = a_g*native_sqrt(epsilon / (1.0f - epsilon));
+    float xt = a_g*native_sqrt(native_divide(epsilon, 1.0f - epsilon));
     float ct = native_rsqrt(1.0f + xt*xt);
     float st = xt*ct;
     float phi = 2.0f*PI*rand(seed);
@@ -590,17 +606,17 @@ void dielectric_brdf(unsigned int *seed, float3 n, float3 wo, float3* kd, float3
         float idm = dot(i, m);
         *wr = normalize(2.0f*idm*m - i);
         
-        *brdf = fabs(idm / (dot(i, n)*ct)) * GGX_G(i, *wr, m, n, a_g);
+        *brdf = fabs(native_divide(idm, dot(i, n)*ct)) * GGX_G(i, *wr, m, n, a_g);
     }
     else {
         
-        float nr = n_i / n_o;
+        float nr = native_divide(n_i, n_o);
         float idn = dot(i, n);
         float cr = dot(i, m);
         float k = 1.0f + nr*nr*(cr*cr - 1.0f);
         *wr = normalize(m*(nr*cr - copysign(1.0f, idn)*native_sqrt(k)) - i*nr);
         
-        *brdf = fabs(cr / (idn*ct))*GGX_G(i, *wr, m, n, a_g);
+        *brdf = fabs(native_divide(cr, idn*ct))*GGX_G(i, *wr, m, n, a_g);
     }
     
 }
@@ -610,7 +626,7 @@ void dielectric_brdf(unsigned int *seed, float3 n, float3 wo, float3* kd, float3
  
  Mirror BRDF
  
-*/
+ */
 void mirror_brdf(float3 n, float3 wo, float3* wr) {
     *wr = 2.0f*dot(n, wo)*n - wo;
 }
@@ -620,7 +636,7 @@ void mirror_brdf(float3 n, float3 wo, float3* wr) {
  
  Generic BSDF function
  
-*/
+ */
 void bsdf(unsigned int *seed, float3 n, float3 wo, float3* wr, float3* kd, float3* ke,
           Material m, float* brdf) {
     
@@ -642,7 +658,7 @@ void bsdf(unsigned int *seed, float3 n, float3 wo, float3* wr, float3* kd, float
 
 
 float3 trace(__global Sphere* spheres, __global Triangle* triangles, __global BVHNode* nodes,
-             __global Material* materials, const Ray* camray, const unsigned int sphere_count,
+             __constant Material* materials, const Ray* camray, const unsigned int sphere_count,
              const unsigned int triangle_count, const unsigned int node_count,
              const unsigned int material_count, unsigned int *seed, int ibl_width, int ibl_height,
              __global float3* ibl) {
@@ -681,7 +697,7 @@ float3 trace(__global Sphere* spheres, __global Triangle* triangles, __global BV
                 if(rand(seed) > p)
                     break;
                 
-                throughput *= 1.0f / p;
+                throughput *= native_recip(p);
             }
         }
         else {
@@ -689,26 +705,27 @@ float3 trace(__global Sphere* spheres, __global Triangle* triangles, __global BV
             float3 env_map_pos = (float3)(0.0f, 15.0f, 0.0f);
             float3 eye = ray.origin - env_map_pos;
             float b = dot(eye, ray.dir);
-            const float c = dot(eye, eye) - 1e32f;
+            const float c = dot(eye, eye) - 1e16f;
             float d = b*b - c;
             
             const float3 smp = eye + ray.dir * (native_sqrt(d) - b);
-            const float v = (float) acospi(smp.y*1e-16f);
-            const float u0 = 0.5f*((float) atan2pi(smp.x, smp.z)) + 1.0f;
+            const float v = acospi(smp.y*1e-8f);
+            const float u0 = 0.5f*atan2pi(smp.x, smp.z) + 1.0f;
             const float u = (u > 1.0f) ? u0 - 1.0f : u0;
             const float3 ibl_sample = sampleImage(u, v, ibl_width, ibl_height, ibl);
-            return color += throughput * ibl_sample;
+            const float3 void_color = (float3) (0.05f, 0.05f, 0.1f);
+            return (color + throughput * void_color * ibl_sample);
             /*const float3 void_color = (float3) (0.05f, 0.05f, 0.1f);
-            return color += throughput * void_color;*/
+             return color += throughput * void_color;*/
             
             /*float cos2theta = dot(ray.dir, NORMALIZED_ZENITH_DIR);
-            float costheta = native_sqrt(0.5f * (cos2theta + 1.0f));
-            costheta = pow(costheta, 500.0f);
-            float mult = max(130.0f * costheta + 1.0f, 1.0f);
-            float3 multvec = (float3)(mult, mult, mult);
-            float3 onevec = (float3)(1.0f, 1.0f, 1.0f);
-            float3 gradientres = multvec * costheta + onevec * (1.0f - costheta);
-            return color += throughput * gradientres;*/
+             float costheta = native_sqrt(0.5f * (cos2theta + 1.0f));
+             costheta = pow(costheta, 500.0f);
+             float mult = max(130.0f * costheta + 1.0f, 1.0f);
+             float3 multvec = (float3)(mult, mult, mult);
+             float3 onevec = (float3)(1.0f, 1.0f, 1.0f);
+             float3 gradientres = multvec * costheta + onevec * (1.0f - costheta);
+             return color += throughput * gradientres;*/
             /*return color + throughput;*/
             /*return color;*/
         }
@@ -717,11 +734,11 @@ float3 trace(__global Sphere* spheres, __global Triangle* triangles, __global BV
 }
 
 int pix_coord(const unsigned int width, const unsigned int height, int i) {
-    int bigcol = i / (height*8);
-    int col = bigcol * 8 + i % 8;
-    int rowcomp = i - (bigcol * 8 * height);
+    int bigcol = i / (8 * height);
+    int col = 8 * bigcol + i % 8;
+    int rowcomp = i - (8 * bigcol * height);
     int row = rowcomp / 8;
-    return (row*width + col);
+    return (row * width + col);
 }
 
 union Color{ float c; uchar4 components; };
@@ -729,7 +746,7 @@ union Color{ float c; uchar4 components; };
 __kernel void render_kernel(__global float3* accumbuffer, __constant unsigned int* usefulnums,
                             __global unsigned int* randoms, __global float3* ibl, __global float3* output,
                             __global Sphere* spheres, __global Triangle* triangles, __global BVHNode* nodes,
-                            __global Material* materials, __constant const Camera* cam, int framenumber) {
+                            __constant Material* materials, __constant const Camera* cam, int framenumber) {
     
     const unsigned int width = usefulnums[0];
     const unsigned int height = usefulnums[1];
@@ -746,39 +763,28 @@ __kernel void render_kernel(__global float3* accumbuffer, __constant unsigned in
     unsigned int x_coord = work_item_id % width;    /* x-coordinate of the pixel */
     unsigned int y_coord = work_item_id / width;    /* y-coordinate of the pixel */
     
-    const float isamples = 1.0f / samples;
-    
     float3 result = (float3)(0.0f, 0.0f, 0.0f);
-    int spp = framenumber*samples;
-    for(unsigned int i = 0; i < samples; i++, spp++) {
-        Ray camray = createCamRay(x_coord, height - y_coord, width, height, &seed, cam);
-        /*float u = (float)x_coord / width;
-        float v = (float)y_coord / height;
-        result += (float3)(u, v, 1 - u - v);*/
-        float3 currres = trace(spheres, triangles, nodes, materials, &camray,
-                               sphere_amt, triangle_amt, node_amt, material_amt,
-                               &seed, ibl_width, ibl_height, ibl);
-        
-        if((isnan(currres.x) != 1) && (isnan(currres.y) != 1) && (isnan(currres.z) != 1))
-            result += currres;
-    }
-    float ispp = 1.0f / spp;
-    accumbuffer[work_item_id] *= 1 - samples * ispp;
+    int spp = framenumber + 1;
+    
+    Ray camray = createCamRay(x_coord, height - y_coord, width, height, &seed, cam);
+    /*float u = (float)x_coord / width;
+     float v = (float)y_coord / height;
+     result += (float3)(u, v, 1 - u - v);*/
+    float3 currres = trace(spheres, triangles, nodes, materials, &camray,
+                           sphere_amt, triangle_amt, node_amt, material_amt,
+                           &seed, ibl_width, ibl_height, ibl);
+    
+    if((isnan(currres.x) != 1) && (isnan(currres.y) != 1) && (isnan(currres.z) != 1))
+        result = currres;
+    
+    float ispp = native_recip((float) spp);
+    accumbuffer[work_item_id] *= 1.0f - ispp;
     accumbuffer[work_item_id] += result * ispp;
     randoms[work_item_id] = seed;
     float3 res = tonemapFilmic(accumbuffer[work_item_id]);
     
-    res = (float3)(
-        clamp(res.x, 0.0f, 1.0f),
-        clamp(res.y, 0.0f, 1.0f),
-        clamp(res.z, 0.0f, 1.0f));
-    
     union Color fcolor;
-    fcolor.components = (uchar4)(
-        (unsigned char)(res.x * 255),
-        (unsigned char)(res.y * 255),
-        (unsigned char)(res.z * 255),
-        1);
+    fcolor.components = (uchar4)(convert_uchar3(clamp(res, 0.0f, 1.0f) * 255), 1);
     
     output[work_item_id] = (float3)(x_coord, y_coord, fcolor.c);
 }

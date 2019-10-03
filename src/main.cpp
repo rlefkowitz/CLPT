@@ -45,6 +45,10 @@ int bvhnode_amt;
 Material* cpu_materials;
 int material_amt;
 
+// Random generator
+default_random_engine generator;
+uniform_int_distribution<int> distribution(1, (1 << 31) - 2);
+
 // Camera variable
 Camera* cpu_camera = NULL;
 
@@ -228,12 +232,14 @@ void buildScene() {
     vector<Sphere> spheres;
     spheres.clear();
 
-//    materials.push_back(Material(Vec3(0.9f, 0.3f, 0.3f)));//, Vec3(4.0f, 4.0f, 4.0f)));
-//    Sphere sphere0(2.0f, Vec3(-9.0f, 2.00001f, 5.0f), 0);
+    int sphere0Mat = materials.size();
+    materials.push_back(Material(Vec3(0.9f, 0.3f, 0.3f)));//, Vec3(4.0f, 4.0f, 4.0f)));
+//    Sphere sphere0(2.0f, Vec3(-9.0f, 2.00001f, 5.0f), sphere0Mat);
 //    spheres.push_back(sphere0);
-//
+
+//    int sphere1Mat = materials.size();
 //    materials.push_back(Material(Vec3(0.3f, 0.9f, 0.3f), 0.103f, 1.495f, 2));
-//    Sphere sphere1(2.0f, Vec3(-3.0f, 2.00001f, 5.0f), 1);
+//    Sphere sphere1(2.0f, Vec3(-3.0f, 2.00001f, 5.0f), sphere1Mat);
 //    spheres.push_back(sphere1);
 //    mats[1].kd = Vec3(0.3f, 0.9f, 0.3f);
 //    mats[1].ke = Vec3(0.0f, 0.0f, 0.0f);
@@ -255,8 +261,9 @@ void buildScene() {
 //    cpu_spheres[2].radius = 2.0f;
 //    cpu_spheres[2].pos = Vec3(3.0f, 2.00001f, 5.0f);
 //    cpu_spheres[2].mtl = mats[2];
+//    int sphere2Mat = materials.size();
 //    materials.push_back(Material(Vec3(0.612f, 0.851f, 0.694f), 0.05f, 1));
-//    Sphere sphere2(2.0f, Vec3(3.0f, 2.00001f, 5.0f), 1);
+//    Sphere sphere2(2.0f, Vec3(3.0f, 2.00001f, 5.0f), sphere2Mat);
 //    spheres.push_back(sphere2);
 //    cpu_spheres[1].radius = 2.0f;
 //    cpu_spheres[1].pos = Vec3(3.0f, 2.00001f, 5.0f);
@@ -273,9 +280,6 @@ void buildScene() {
 //    cpu_spheres[2].radius = 2.0f;
 //    cpu_spheres[2].pos = Vec3(-3.0f, 2.00001f, 5.0f);
 //    cpu_spheres[2].mtl = mats[2];
-    
-    vector<Triangle> triangles;
-    triangles.clear();
     
     // (1 << 1) | 0000 = 0010
     // 0010 | 0000 = 0010
@@ -299,23 +303,40 @@ void buildScene() {
 //    deerMat.tex1 = -1;
 //    deerMat.type = 2;
 
-    Material emitMat(Vec3(1.0f, 1.0f, 1.0f), Vec3(4.0f, 4.0f, 4.0f));
-    materials.push_back(emitMat);
-    spheres.push_back(Sphere(1.0f, Vec3(-3.0f, 1.00001f, 9.0f), 0));
-    spheres.push_back(Sphere(1.0f, Vec3(-3.0f, 1.00001f, 1.0f), 0));
-    spheres.push_back(Sphere(1.0f, Vec3(-7.0f, 1.00001f, 5.0f), 0));
-    spheres.push_back(Sphere(1.0f, Vec3(1.0f, 1.00001f, 5.0f), 0));
+    int emitMat = materials.size();
+    materials.push_back(Material(Vec3(0.0f, 0.0f, 0.0f), Vec3(2.0f, 2.0f, 2.0f)));
+
+    int emitSphereAmt = 12;
     
+    float pi2 = 2.0f * 3.141592653589793223f;
+    
+    float interval = pi2 / ((float) emitSphereAmt);
+
+    float theta = 0;
+    
+    for(int it = 0; it < emitSphereAmt; it++, theta += interval) {
+        Sphere sphereToAdd(it % 2 == 1 ? 1.0f : 1.5f, Vec3(10.0f*cos(theta) - 3.0f, it % 2 == 1 ? 1.00001f : 1.50001f, 10.0f*sin(theta) + 5.0f), it % 2 == 1 ? sphere0Mat : emitMat);
+        spheres.push_back(sphereToAdd);
+    }
+//    spheres.push_back(Sphere(1.0f, Vec3(-3.0f, 1.00001f, 9.0f), emitMat));
+//    spheres.push_back(Sphere(1.0f, Vec3(-3.0f, 1.00001f, 1.0f), emitMat));
+//    spheres.push_back(Sphere(1.0f, Vec3(-7.0f, 1.00001f, 5.0f), emitMat));
+//    spheres.push_back(Sphere(1.0f, Vec3(1.0f, 1.00001f, 5.0f), emitMat));
+    
+    
+    vector<Triangle> triangles;
+    triangles.clear();
     vector<BVHNode> nodes;
+    nodes.clear();
 
     
 //    loadObj(triangles, "cube", cubeMat, /*Vec3(-3.0f, 3.00001f, 5.0f)*/Vec3(-3.0f, 1.5f, 5.0f), Vec3(3.0f, 3.0f, 3.0f));
-    int dragonMat = materials.size();
-    materials.push_back(Material(Vec3(0.7f, 0.3f, 0.3f), 0.103f, 1.495f, 2));
-    loadObj(triangles, "dragon", dragonMat, /*Vec3(-3.0f, 3.00001f, 5.0f)*/Vec3(-3.0f, 0.0f, 5.0f), Vec3(0.4f, 0.4f, 0.4f));
-//    int deerMat = materials.size();
-//    materials.push_back(Material(Vec3(0.3f, 0.3f, 0.9f), 0.103f, 1.3333333f, 1));
-//    loadObj(triangles, "deer", deerMat, /*Vec3(-3.0f, 3.00001f, 5.0f)*/Vec3(-3.0f, 0.0f, 5.0f), Vec3(0.25f, 0.25f, 0.25f));
+//    int dragonMat = materials.size();
+//    materials.push_back(Material(Vec3(0.7f, 0.3f, 0.3f), 0.103f, 1.495f, 2));
+//    loadObj(triangles, "dragon", dragonMat, /*Vec3(-3.0f, 3.00001f, 5.0f)*/Vec3(-3.0f, 0.0f, 5.0f), Vec3(0.4f, 0.4f, 0.4f));
+    int deerMat = materials.size();
+    materials.push_back(Material(Vec3(0.3f, 0.3f, 0.9f), 0.103f, 1.3333333f, 1));
+    loadObj(triangles, "deer", deerMat, /*Vec3(-3.0f, 3.00001f, 5.0f)*/Vec3(-3.0f, 0.0f, 5.0f), Vec3(0.25f, 0.25f, 0.25f));
 
     nodes = build(triangles);
     
@@ -368,9 +389,6 @@ void createBufferValues() {
     cpu_usefulnums[0] = (cl_uint) window_width;
     cpu_usefulnums[1] = (cl_uint) window_height;
     
-    default_random_engine generator;
-    uniform_int_distribution<int> distribution(1, (1 << 31) - 2);
-    
     // Generate random seeds
     cpu_randoms = new cl_uint[window_width * window_height];
     for(int i = 0; i < window_width * window_height; i++) {
@@ -380,6 +398,7 @@ void createBufferValues() {
 //    cpu_accumbuffer = new cl_float3[window_width * window_height];
     
     // IBL Loading
+//    string ibl_src_str = "res/HDR_040_Field.hdr";
     string ibl_src_str = "res/Frozen_Waterfall_Ref.hdr";
     const char* ibl_src = ibl_src_str.c_str();
     
@@ -571,7 +590,7 @@ void render() {
 //    queue.enqueueWriteBuffer(cl_spheres, CL_TRUE, 0, sphere_amt * sizeof(Sphere), cpu_spheres);
 //    queue.enqueueWriteBuffer(cl_triangles, CL_TRUE, 0, triangle_amt * sizeof(Triangle), cpu_triangles);
 //    queue.enqueueWriteBuffer(cl_nodes, CL_TRUE, 0, bvhnode_amt * sizeof(BVHNode), cpu_bvhs);
-//    queue.enqueueWriteBuffer(cl_materials, CL_TRUE, 0, material_amt * sizeof(Material), cpu_materials);
+    queue.enqueueWriteBuffer(cl_materials, CL_TRUE, 0, material_amt * sizeof(Material), cpu_materials);
     
     
 //    for(int i = 0; i < window_width * window_height; i++) {
@@ -621,11 +640,23 @@ void cleanUp(){
 
 void initCamera() {
     delete interactiveCamera;
+    /*
+     For sponza
+     */
+//    Vec3 cam_pos = Vec3(8.150078f, 1.309537f, 5.077352f);
+//    Vec3 cam_fd = Vec3(0.999952f, -0.009341f, -0.003029f);
+//    Vec3 cam_up = Vec3(0.009341f, 0.999956f, -0.000028f);
+//    float cam_focal_distance = 7.370589916300956f;
+//    float cam_aperture_radius = 1e-8f;
+    
+    /*
+     For standard scene
+     */
     Vec3 cam_pos = Vec3(4.216578948221484f, 2.375f, 0.34339889486771863f);
     Vec3 cam_fd = Vec3(-0.7156478248575902f, -0.05930652721420354f, 0.6959388813727766f);
     Vec3 cam_up = Vec3(-0.042517570286490336f, 0.9982398187959389f, 0.04134634672114762f);
     float cam_focal_distance = 7.370589916300956f;
-    float cam_aperture_radius = 5e-2f;
+    float cam_aperture_radius = 8e-2f;
     interactiveCamera = new InteractiveCamera(cam_pos, cam_fd, cam_up, cam_focal_distance, cam_aperture_radius);
 }
 
