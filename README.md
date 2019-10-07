@@ -51,6 +51,7 @@ Thank you for checking out CLPT!
 
 ### Optimizations
 Further optimizations could be implemented to improve the speed and efficiency of CLPT
+
 #### Acceleration structures
 - SBVH (Stich et al. 2009) has been shown to have an identical worst-case performance to the SAH BVH, while boasting a significant increase in best-case performance
 
@@ -65,10 +66,12 @@ Further optimizations could be implemented to improve the speed and efficiency o
     - As a result, these threads are idling, which will worsen the consequences of execution divergence
     
 #### Should explore Wavefront Path Tracing (Laine et al. 2013)
--Better streamlines the path tracing pipeline for GPU usage
+- Better streamlines the path tracing pipeline for GPU usage
+
 
 ### Features
 There are many features which could be implemented to increase the user experience, photorealism, and capabilities of CLPT
+
 #### Volumetric Path Tracing
 - Would improve realism of scenes and make available many complex materials
 - Though it would certainly cause some additional latency and high-frequency noise would be more prevalent
