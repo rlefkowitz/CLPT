@@ -681,7 +681,7 @@ float3 trace(__global Sphere* spheres, __global Triangle* triangles, __global BV
                            sphere_count, triangle_count, node_count, material_count)) {
             float3 kd = mtl.kd;
             float3 ke = mtl.ke;
-            bsdf(seed, normal, -1.0f * ray.dir, &wr, &kd, &ke, mtl, &brdf);
+            bsdf(seed, normal, -ray.dir, &wr, &kd, &ke, mtl, &brdf);
             ray.dir = wr;
             ray.origin = point;
             color += throughput * ke;
