@@ -106,24 +106,25 @@ Ray createCamRay(const int x_coord, const int y_coord, const int width, const in
     float x0 = ih * (x_coord + offx - 0.5f) - har;
     float y0 = 0.5f - ih * (y_coord + offy - 0.5f);
     
-    float3 fd = cam->fd;
-    float3 up = cam->up;
-    float3 rt = cross(up, fd);
-    float3 raydir = x0*rt + y0*up + fd;
+    const float3 fd = cam->fd;
+    const float3 up = cam->up;
+    const float3 rt = cross(up, fd);
+    const float3 raydir = x0*rt + y0*up + fd;
     
-    Ray ray;
-    ray.origin = cam->pos;
-    ray.dir = normalize(raydir);
     if(DOF) {
+        Ray ray;
         float2 pt = cam->aperture_radius*samplePoly(seed);
-        float FdR = dot(fd, ray.dir);
         float3 aptOffset = up*pt.y + rt*pt.x;
-        float3 dn = normalize(ray.dir*native_divide(cam->focal_distance, FdR) - aptOffset);
+        float3 dn = normalize(raydir*cam->focal_distance - aptOffset);
         ray.origin = cam->pos + aptOffset;
         ray.dir = dn;
+        return ray;
+    } else {
+        Ray ray;
+        ray.origin = cam->pos;
+        ray.dir = normalize(raydir);
+        return ray;
     }
-    
-    return ray;
 }
 
 float3 orientTo(float3 a, float3 N) {
@@ -156,9 +157,7 @@ bool intersect_sphere(__global Sphere* sphere, const Ray* ray, float3* point, fl
     float c = dot(rayToCenter, rayToCenter) - sphere->radius*sphere->radius;
     float d = b * b - c;
     
-    if (d <= eps) {
-        return false;
-    }
+    if (d <= eps) return false;
     d = native_sqrt(d);
     float temp = b - d;
     if(temp > *t) return false;
@@ -277,7 +276,6 @@ void intersect_bvh(__global Triangle* triangles, __global BVHNode* nodes, const 
                    float3* normal, float* t, const unsigned int triangle_count, const unsigned int node_count,
                    int* triangle_id, int* sphere_id) {
     
-    int steps = 0;
     BVHNode current = nodes[0];
     
     if(!intersect_aabb(&current, ray, t))
@@ -295,10 +293,10 @@ void intersect_bvh(__global Triangle* triangles, __global BVHNode* nodes, const 
     int child1_mod;
     int child2_mod;
     
-    while(steps < 100000) {
+    while(true) {
         if(goingUp) {
             if(currentIdx < 1)
-                break;
+                return;
             
             lastIdx = currentIdx;
             currentIdx = current.parent;
@@ -382,7 +380,6 @@ void intersect_bvh(__global Triangle* triangles, __global BVHNode* nodes, const 
                 
                 goingUp = true;
             }
-            steps++;
             continue;
         }
         
@@ -401,7 +398,6 @@ void intersect_bvh(__global Triangle* triangles, __global BVHNode* nodes, const 
             currentIdx = child2_mod;
             depth++;
         }
-        steps++;
     }
 }
 
@@ -471,7 +467,7 @@ float3 sampleImage(float u, float v, int width, int height, __global float3* img
 void diffuse_brdf(unsigned int *seed, float3 n, float3* wr) {
     float u1 = rand(seed);
     float u2 = rand(seed);
-    *wr = normalize(cosineRandHemi(n, u1, u2));
+    *wr = cosineRandHemi(n, u1, u2);
 }
 
 
@@ -686,7 +682,7 @@ float3 trace(__global Sphere* spheres, __global Triangle* triangles, __global BV
                            sphere_count, triangle_count, node_count, material_count)) {
             float3 kd = mtl.kd;
             float3 ke = mtl.ke;
-            bsdf(seed, normal, normalize(-1.0f * ray.dir), &wr, &kd, &ke, mtl, &brdf);
+            bsdf(seed, normal, -1.0f * ray.dir, &wr, &kd, &ke, mtl, &brdf);
             ray.dir = wr;
             ray.origin = point;
             color += throughput * ke;
@@ -695,7 +691,7 @@ float3 trace(__global Sphere* spheres, __global Triangle* triangles, __global BV
             if(n > 3) {
                 float p = max(throughput.x, max(throughput.y, throughput.z));
                 if(rand(seed) > p)
-                    break;
+                    return color;
                 
                 throughput *= native_recip(p);
             }
@@ -713,6 +709,7 @@ float3 trace(__global Sphere* spheres, __global Triangle* triangles, __global BV
             const float u0 = 0.5f*atan2pi(smp.x, smp.z) + 1.0f;
             const float u = (u > 1.0f) ? u0 - 1.0f : u0;
             const float3 ibl_sample = sampleImage(u, v, ibl_width, ibl_height, ibl);
+            /*return (color + throughput * void_color * ibl_sample);*/
             const float3 void_color = (float3) (0.05f, 0.05f, 0.1f);
             return (color + throughput * void_color * ibl_sample);
             /*const float3 void_color = (float3) (0.05f, 0.05f, 0.1f);
