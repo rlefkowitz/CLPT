@@ -69,8 +69,6 @@ static float rand(unsigned int *seed) {
     x ^= x << 5;
     *seed = x;
     return as_float((x & 0x007FFFFF) | 0x3F800000) - 1.0;
-    /**seed = ((*seed) * 16807) % 2147483647;
-     return (float)(*seed - 1) / 2147483646.0f;*/
 }
 
 float3 tonemapFilmic(const float3 f) {
@@ -91,6 +89,7 @@ float2 samplePoly(unsigned int *seed) {
     float2 a0 = (float2)(ct, st);
     float2 a1 = (float2)(ct*cba - st*sba, st*cba + ct*sba);
     return (r1 * (a0*(1.0f - r2) + a1*r2));
+    return (r1 * (a0 - r2 * (a0 + a1));
 }
 
 
