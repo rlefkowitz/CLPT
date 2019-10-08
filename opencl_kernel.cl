@@ -88,7 +88,7 @@ float2 samplePoly(unsigned int *seed) {
     float st = native_sin(t);
     float2 a0 = (float2)(ct, st);
     float2 a1 = (float2)(ct*cba - st*sba, st*cba + ct*sba);
-    return (r1 * (a0 - r2 * (a0 + a1)));
+    return (r1 * (a0 - r2 * (a0 - a1)));
 }
 
 
@@ -230,7 +230,7 @@ bool intersect_ground(const Ray* ray, float3* point, float3* normal, float* t) {
     return true;
 }
 
-bool intersect_aabb(const BVHNode* b, const Ray* r, float* t) {
+bool intersect_aabb(__global BVHNode* b, const Ray* r, float* t) {
     float3 invD = r->inv_dir;
     float3 t0s = (b->box[0] - r->origin) * invD;
     float3 t1s = (b->box[1] - r->origin) * invD;
@@ -244,7 +244,7 @@ bool intersect_aabb(const BVHNode* b, const Ray* r, float* t) {
     return (tmin <= tmax);
 }
 
-bool intersect_aabb_lw(const BVHNode* b, const Ray* r, float* t) {
+bool intersect_aabb_lw(__global BVHNode* b, const Ray* r, float* t) {
     float3 invD = r->inv_dir;
     float3 t0s = (b->box[0] - r->origin) * invD;
     float3 t1s = (b->box[1] - r->origin) * invD;
@@ -256,7 +256,7 @@ bool intersect_aabb_lw(const BVHNode* b, const Ray* r, float* t) {
     return (tmin <= *t);
 }
 
-float intersect_aabb_dist(const BVHNode* b, const Ray* r, float* t) {
+float intersect_aabb_dist(__global BVHNode* b, const Ray* r, float* t) {
     float3 invD = r->inv_dir;
     float3 t0s = (b->box[0] - r->origin) * invD;
     float3 t1s = (b->box[1] - r->origin) * invD;
@@ -274,16 +274,15 @@ void intersect_bvh(__global Triangle* triangles, __global BVHNode* nodes, const 
                    float3* normal, float* t, const unsigned int triangle_count, const unsigned int node_count,
                    int* triangle_id, int* sphere_id) {
     
-    BVHNode current = nodes[0];
-    
-    if(!intersect_aabb(&current, ray, t))
+    if(!intersect_aabb(&nodes[0], ray, t))
         return;
+    
+    BVHNode current = nodes[0];
     
     int currentIdx = 0;
     int lastIdx = -1;
     unsigned int depth = 0;
     unsigned int branch = 0;
-    bool retrieved_current = true;
     bool goingUp = false;
     bool swapped;
     int child1;
@@ -293,18 +292,19 @@ void intersect_bvh(__global Triangle* triangles, __global BVHNode* nodes, const 
     
     while(true) {
         if(goingUp) {
-            if(currentIdx < 1)
+            if(currentIdx == 0)
                 return;
             
             lastIdx = currentIdx;
             currentIdx = current.parent;
             branch &= (2 << depth) - 1;
             depth--;
+        } else {
+            depth++;
         }
         
-        if(!retrieved_current)
-            current = nodes[currentIdx];
-        retrieved_current = false;
+        current = nodes[currentIdx];
+        
         /*
          BVH Traversal: Either of the first two conditions are true if currently moving up the tree
          */
@@ -313,88 +313,53 @@ void intersect_bvh(__global Triangle* triangles, __global BVHNode* nodes, const 
         
         goingUp = false;
         
-        if(currentIdx > lastIdx) {
-            if(current.isLeaf != 1) {
-                BVHNode c1 = nodes[child1];
-                BVHNode c2 = nodes[child2];
-                float dist1 = intersect_aabb_dist(&c1, ray, t);
-                float dist2 = intersect_aabb_dist(&c2, ray, t);
-                bool hit1 = dist1 != INF;
-                bool hit2 = dist2 != INF;
-                
-                if(hit1 && hit2) {
-                    /*
-                     Both distances are finite
-                     */
-                    retrieved_current = true;
-                    
-                    bool reverse = dist2 < dist1;
-                    branch |= (reverse << 1) << depth;
-                    
-                    lastIdx = currentIdx;
-                    currentIdx = reverse ? child2 : child1;
-                    current = reverse ? c2 : c1;
-                    depth++;
-                    
-                } else if(hit1) {
-                    /*
-                     dist2 is infinite and dist1 is finite
-                     */
-                    retrieved_current = true;
-                    
-                    branch |= (2 << depth);
-                    lastIdx = currentIdx;
-                    currentIdx = child1;
-                    current = c1;
-                    depth++;
-                    
-                } else if(hit2) {
-                    /*
-                     dist1 is infinite and dist2 is finite
-                     */
-                    retrieved_current = true;
-                    
-                    lastIdx = currentIdx;
-                    currentIdx = child2;
-                    current = c2;
-                    depth++;
-                    
-                } else {
-                    /*
-                     Both distances are infinite
-                     */
-                    goingUp = true;
-                }
-            } else {
-                
-                for (int i = child1; i < child2; i++)  {
-                    
-                    if(intersect_triangle(&triangles[i], ray, point, normal, t, false)) {
-                        *triangle_id = i;
-                        *sphere_id = -1;
-                    }
-                    
-                }
-                
+        if(currentIdx < lastIdx) {
+            swapped = (2 << depth) & branch;
+            child1_mod = swapped ? child2 : child1;
+            child2_mod = swapped ? child1 : child2;
+            
+            if(lastIdx == child2_mod) {
+                /*
+                 If done parsing right node, done with entire branch
+                 */
                 goingUp = true;
+                
+            } else {
+                lastIdx = currentIdx;
+                currentIdx = child2_mod;
             }
             continue;
         }
         
-        swapped = (2 << depth) & branch;
-        child1_mod = swapped ? child2 : child1;
-        child2_mod = swapped ? child1 : child2;
-        
-        if(lastIdx == child2_mod) {
-            /*
-             If done parsing right node, done with entire branch
-             */
-            goingUp = true;
+        if(current.isLeaf != 1) {
+            float dist1 = intersect_aabb_dist(&nodes[child1], ray, t);
+            float dist2 = intersect_aabb_dist(&nodes[child2], ray, t);
+            bool hit1 = dist1 != INF;
+            bool hit2 = dist2 != INF;
             
-        } else if(lastIdx == child1_mod) {
-            lastIdx = currentIdx;
-            currentIdx = child2_mod;
-            depth++;
+            if(hit1 || hit2) {
+                lastIdx = currentIdx;
+                
+                bool reverse = dist2 < dist1;
+                bool swapping = hit1 && (reverse || !hit2);
+                branch |= (swapping << 1) << depth;
+                currentIdx = (hit2 && reverse) ? child2 : child1;
+                continue;
+            }
+            
+            goingUp = true;
+        } else {
+            
+            for (int i = child1; i < child2; i++)  {
+                
+                if(intersect_triangle(&triangles[i], ray, point, normal, t, false)) {
+                    *triangle_id = i;
+                    *sphere_id = -1;
+                }
+                
+            }
+            
+            goingUp = true;
         }
     }
 }
@@ -707,7 +672,7 @@ float3 trace(__global Sphere* spheres, __global Triangle* triangles, __global BV
             const float u0 = 0.5f*atan2pi(smp.x, smp.z) + 1.0f;
             const float u = (u > 1.0f) ? u0 - 1.0f : u0;
             const float3 ibl_sample = sampleImage(u, v, ibl_width, ibl_height, ibl);
-            /*return (color + throughput * void_color * ibl_sample);*/
+            /*return (color + throughput * ibl_sample);*/
             const float3 void_color = (float3) (0.05f, 0.05f, 0.1f);
             return (color + throughput * void_color * ibl_sample);
             /*const float3 void_color = (float3) (0.05f, 0.05f, 0.1f);
