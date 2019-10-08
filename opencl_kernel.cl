@@ -88,7 +88,6 @@ float2 samplePoly(unsigned int *seed) {
     float st = native_sin(t);
     float2 a0 = (float2)(ct, st);
     float2 a1 = (float2)(ct*cba - st*sba, st*cba + ct*sba);
-    return (r1 * (a0*(1.0f - r2) + a1*r2));
     return (r1 * (a0 - r2 * (a0 + a1)));
 }
 
