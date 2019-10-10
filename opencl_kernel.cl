@@ -76,8 +76,6 @@ static float rand(unsigned int *seed) {
     x ^= x << 5;
     *seed = x;
     return as_float((x & 0x007FFFFF) | 0x3F800000) - 1.0;
-    /**seed = ((*seed) * 16807) % 2147483647;
-     return (float)(*seed - 1) / 2147483646.0f;*/
 }
 
 float3 tonemapFilmic(const float3 f) {
@@ -182,24 +180,6 @@ bool intersect_sphere(__global Sphere* sphere, const Ray* ray, float3* point, fl
 
 bool intersect_triangle(__global Triangle *triangle, const Ray* ray, float3* point, float3* normal, float* t,
                         const bool cull) {
-    
-    /*float td = dot(ray->dir, triangle->vn);
-     if(-td < eps && m->type != 2)
-     return false;
-     float temp = dot(triangle->v0 - ray->origin, triangle->vn) / td;
-     if(temp >= *t || temp < eps) return false;
-     
-     float3 x = ray->origin + temp*ray->dir;
-     
-     float u = dot(triangle->vu, x);
-     if(u < 0 || u > 1) return false;
-     
-     float v = dot(triangle->vv, x);
-     if(v < 0 || u + v > 1) return false;
-     
-     *point = x;
-     *t = temp;
-     return true;*/
     
     float3 v0v1 = triangle->v1 - triangle->v0;
     float3 v0v2 = triangle->v2 - triangle->v0;
@@ -790,14 +770,11 @@ float3 trace(__global Sphere* spheres, __global Triangle* triangles, __global BV
                 const float u0 = 0.5f*atan2pi(smp.x, smp.z) + 1.0f;
                 const float u = (u > 1.0f) ? u0 - 1.0f : u0;
                 const float3 ibl_sample = sampleImage(u, v, ibl_width, ibl_height, ibl);
-                /*const float3 void_color = (float3) (0.05f, 0.05f, 0.1f);*/
                 return (color + throughput * void_color * ibl_sample);
             }
             else {
                 return (color + throughput * void_color);
             }
-            /*const float3 void_color = (float3) (0.05f, 0.05f, 0.1f);
-            return (color + throughput * void_color);*/
             
             /*float cos2theta = dot(ray.dir, NORMALIZED_ZENITH_DIR);
              float costheta = native_sqrt(0.5f * (cos2theta + 1.0f));
@@ -854,9 +831,7 @@ __kernel void render_kernel(__global float3* accumbuffer, __constant unsigned in
     int spp = framenumber + 1;
     
     Ray camray = createCamRay(x_coord, height - y_coord, width, height, use_DOF, &seed, cam);
-    /*float u = (float)x_coord / width;
-     float v = (float)y_coord / height;
-     result += (float3)(u, v, 1 - u - v);*/
+    
     float3 currres = trace(spheres, triangles, nodes, materials, mediums,
                            &camray, sphere_amt, triangle_amt, node_amt,
                            material_amt, medium_amt, &seed, ibl_width, ibl_height,
