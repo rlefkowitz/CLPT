@@ -1,0 +1,1 @@
+/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/c++   -std=c++11 -framework OpenCL -Wl,-search_paths_first -Wl,-headerpad_max_install_names  CMakeFiles/clpath_exe.dir/src/main.cpp.o  -o clpath libclpath.a -framework OpenGL -framework OpenGL -framework GLUT -framework Cocoa 

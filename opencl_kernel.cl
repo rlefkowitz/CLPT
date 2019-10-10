@@ -862,7 +862,7 @@ __kernel void render_kernel(__global float3* accumbuffer, __constant unsigned in
                            material_amt, medium_amt, &seed, ibl_width, ibl_height,
                            ibl, void_color, use_IbL, use_ground);
     
-    if((isnan(currres.x) != 1) && (isnan(currres.y) != 1) && (isnan(currres.z) != 1))
+    if(isnan(currres).x == 0)
         result = currres;
     
     accumbuffer[work_item_id] += result;
