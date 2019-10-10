@@ -11,7 +11,7 @@ The scene `clpt.clpt` (1280x640, 51,000+ SPP), rendered in just over an hour.
 - Progressive rendering
 - Depth of Field (with pentagonal bokeh) based on the thin-lens model
 - Image-Based Lighting using an HDR environment map
-- Volumetric Path Tracing with Homogeneous Media using Full Scattering
+- Volumetric Path Tracing with homogeneous media using full scattering
 - Custom, readable scene (`.clpt`) and configuration (`.clptcfg`) file formats
 
 ### Supported primitives
