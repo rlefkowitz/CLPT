@@ -75,17 +75,17 @@ enableIbL
 enableDOF
 enableGround
 
- # add IbL and set IbL weights by component (or background color if no IbL)
+ # specify IbL path and set IbL weights by component (or background color if no IbL)
 iblPath res/Frozen_Waterfall_Ref.hdr
 backgroundColor 1.0 1.0 1.0
 
- # set a vector type variable 'blue'
+ # set a vector type variable 'blue' to (0.3, 0.3, 0.9)
 set vec3 blue 0.3 0.3 0.9
 
- # create a material 'bluePlastic'
+ # create a material 'bluePlastic', a plastic material with a diffuse color of 'blue' and a roughness of 0.103'
 material bluePlastic plastic blue 0.103
 
- # add a deer mesh to the scene
+ # add a deer mesh to the scene at position (-3, 0, 5) with scale (0.25, 0.25, 0.25) using the 'bluePlastic' material
 mesh deer -3 0 5 0.25 0.25 0.25 bluePlastic
 ```
 For a longer, more complex example, go to the scene file used to produce the image just below the title of this page at `res/clpt.clpt`.
