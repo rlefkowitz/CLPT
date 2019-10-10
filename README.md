@@ -26,6 +26,7 @@ The scene `clpt.clpt` (1280x640, 51,000+ SPP), rendered in just over an hour.
 - Mirror
 
 \**all materials can be emissive*
+
 \**all materials can use a homogenous Isotropic Scattering Medium (only transparent materials will be affected, however)*
 
 
