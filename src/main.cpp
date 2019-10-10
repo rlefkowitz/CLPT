@@ -15,6 +15,8 @@
 using namespace std;
 using namespace cl;
 
+bool profiling = false;
+
 const int samples = 2048;
 const int samplesPerRun = 1;
 
@@ -59,9 +61,10 @@ uniform_int_distribution<int> distribution(1, (1 << 31) - 2);
 // Camera variable
 Camera* cpu_camera = NULL;
 
-// Host (CPU) buffer variables
+// Host (CPU) cl_uint buffer variables
 cl_uint* cpu_randoms;
 cl_uint* cpu_usefulnums;
+
 // OpenCL boiler plate variables
 Device device;
 CommandQueue queue;
@@ -124,7 +127,7 @@ void pickDevice(Device& device, const vector<Device>& devices){
     }
 }
 
-void printErrorLog(const Program& program, const Device& device){
+void printErrorLog(const Program& program, const Device& device) {
     
     // Get the error log and print to console
     string buildlog = program.getBuildInfo<CL_PROGRAM_BUILD_LOG>(device);
@@ -182,7 +185,11 @@ void initOpenCL()
     
     // Create a command queue
     context = Context(device, properties);
-    queue = CommandQueue(context, device);
+    if(profiling) {
+        queue = CommandQueue(context, device, CL_QUEUE_PROFILING_ENABLE);
+    } else {
+        queue = CommandQueue(context, device);
+    }
     
     // Convert the OpenCL source code to a string// Convert the OpenCL source code to a string
     string source;
@@ -580,16 +587,47 @@ void runKernel(){
     if (global_work_size % local_work_size != 0)
         global_work_size = (global_work_size / local_work_size + 1) * local_work_size;
     
-    //Make sure OpenGL is done using the VBOs
+    // Make sure OpenGL is done using the VBOs
     glFinish();
     
-    //this passes in the vector of VBO buffer objects
+    // Pass in the vector of VBO buffer objects
     queue.enqueueAcquireGLObjects(&cl_vbos);
     queue.finish();
     
-    // launch the kernel
-    queue.enqueueNDRangeKernel(kernel, NULL, global_work_size, local_work_size); // local_work_size
-    queue.finish();
+    
+    if(profiling) {
+        // Create Event object for profiling
+        Event start, stop;
+        
+        queue.enqueueMarkerWithWaitList({ }, &start);
+        // Launch the kernel
+        queue.enqueueNDRangeKernel(kernel, NULL, global_work_size, local_work_size);
+        queue.enqueueMarkerWithWaitList({ }, &stop);
+        
+        stop.wait();
+
+        cl_ulong time_start, time_end;
+        double total_time;
+        start.getProfilingInfo(CL_PROFILING_COMMAND_END, &time_start);
+        stop.getProfilingInfo(CL_PROFILING_COMMAND_START, &time_end);
+        total_time = time_end - time_start;
+        cout << "Execution time in milliseconds " << total_time / (float)10e6 << ".\n";
+//        // Retrieve and print profiling info
+//        uint64_t param;
+//        evt.getProfilingInfo(CL_PROFILING_COMMAND_QUEUED, &param);
+//        printf("%u: %llu", 0, param);
+//        evt.getProfilingInfo(CL_PROFILING_COMMAND_SUBMIT, &param);
+//        printf(" %llu", param);
+//        evt.getProfilingInfo(CL_PROFILING_COMMAND_START, &param);
+//        printf(" %llu", param);
+//        evt.getProfilingInfo(CL_PROFILING_COMMAND_END, &param);
+//        printf(" %llu\n", param);
+        queue.finish();
+    } else {
+        // Launch the kernel
+        queue.enqueueNDRangeKernel(kernel, NULL, global_work_size, local_work_size);
+        queue.finish();
+    }
     
     //Release the VBOs so OpenGL can play with them
     queue.enqueueReleaseGLObjects(&cl_vbos);
@@ -640,8 +678,8 @@ void render() {
 //    queue.enqueueWriteBuffer(cl_spheres, CL_TRUE, 0, sphere_amt * sizeof(Sphere), cpu_spheres);
 //    queue.enqueueWriteBuffer(cl_triangles, CL_TRUE, 0, triangle_amt * sizeof(Triangle), cpu_triangles);
 //    queue.enqueueWriteBuffer(cl_nodes, CL_TRUE, 0, bvhnode_amt * sizeof(BVHNode), cpu_bvhs);
-    queue.enqueueWriteBuffer(cl_materials, CL_TRUE, 0, material_amt * sizeof(Material), cpu_materials);
-    queue.enqueueWriteBuffer(cl_mediums, CL_TRUE, 0, medium_amt * sizeof(Medium), cpu_mediums);
+    queue.enqueueWriteBuffer(cl_materials, CL_FALSE, 0, material_amt * sizeof(Material), cpu_materials);
+    queue.enqueueWriteBuffer(cl_mediums, CL_FALSE, 0, medium_amt * sizeof(Medium), cpu_mediums);
     
     
 //    for(int i = 0; i < window_width * window_height; i++) {

@@ -10,11 +10,15 @@ enableIbL
 enableDOF
 enableGround
 
- # add IbL
+ # add IbL and set IbL weights by component (or background color if no IbL)
 iblPath res/Frozen_Waterfall_Ref.hdr
+backgroundColor 1.0 1.0 1.0
 
+ # set a vector type variable 'blue'
 set vec3 blue 0.3 0.3 0.9
 
+ # create a material 'bluePlastic'
 material bluePlastic plastic blue 0.103
 
+ # add a deer mesh to the scene
 mesh deer -3 0 5 0.25 0.25 0.25 bluePlastic
