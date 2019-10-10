@@ -11,6 +11,8 @@ The scene `clpt.clpt` (1280x640, 51,000+ SPP), rendered in just over an hour.
 - Progressive rendering
 - Depth of Field (with pentagonal bokeh) based on the thin-lens model
 - Image-Based Lighting using an HDR environment map
+- Volumetric Path Tracing with Homogeneous Media using Full Scattering
+- Custom, readable scene (`.clpt`) and configuration (`.clptcfg`) file formats
 
 ### Supported primitives
 - Spheres
@@ -20,10 +22,11 @@ The scene `clpt.clpt` (1280x640, 51,000+ SPP), rendered in just over an hour.
 ### Supported materials
 - Lambertian diffuse
 - GGX Plastic
-- GGX Dielectric
+- GGX Dielectric/Glass
 - Mirror
 
 \**all materials can be emissive*
+\**all materials can use a homogenous Isotropic Scattering Medium (only transparent materials will be affected, however)*
 
 
 ## How to use CLPT
@@ -44,6 +47,49 @@ After a bit of initialization, the demo scene will load and the display will app
 ### Other Controls
 - SPACE to reset position and camera attributes
 - ESC to Quit
+
+### Configuration Files
+CLPT's configuration files, specified with a `.clptcfg` or `.clptcfg.txt` extension, are CLPT's way of allowing the user to specify basic parameters of the simulation, such as resolution, the name of the scene file to be used, and whether the scene is interactive (the following example is interactive, as long as the first word of a line is not `interactive` interactivity will be disabled).
+```
+width: 1920
+height: 1080
+scene: default
+interactive
+```
+
+### Scene Files
+CLPT's scene files, specified with a `.clpt` or `.clpt.txt` extension, are CLPT's way of allowing the user to specify all aspects of a scene.
+
+Here's the scene file for `default.clpt`:
+```
+ # set camera attributes
+setCameraPosition 4.216578948221484 2.375 0.34339889486771863
+setCameraForward -0.7156478248575902 -0.05930652721420354 0.6959388813727766
+setCameraUp -0.042517570286490336 0.9982398187959389 0.04134634672114762
+setCameraFocalDistance 7.370589916300956
+setCameraApertureRadius 5e-2
+
+ # toggle options
+enableIbL
+enableDOF
+enableGround
+
+ # add IbL and set IbL weights by component (or background color if no IbL)
+iblPath res/Frozen_Waterfall_Ref.hdr
+backgroundColor 1.0 1.0 1.0
+
+ # set a vector type variable 'blue'
+set vec3 blue 0.3 0.3 0.9
+
+ # create a material 'bluePlastic'
+material bluePlastic plastic blue 0.103
+
+ # add a deer mesh to the scene
+mesh deer -3 0 5 0.25 0.25 0.25 bluePlastic
+```
+For a longer, more complex example, go to the scene file used to produce the image just below the title of this page at `res/clpt.clpt`.
+
+
 
 Thank you for checking out CLPT!
 
@@ -72,10 +118,6 @@ Further optimizations could be implemented to improve the speed and efficiency o
 
 ### Features
 There are many features which could be implemented to increase the user experience, photorealism, and capabilities of CLPT
-
-#### Volumetric Path Tracing
-- Would improve realism of scenes and make available many complex materials
-- Though it would certainly cause some additional latency and high-frequency noise would be more prevalent
 
 #### Conductive materials (i.e. Metal)
 - Certainly feasible for the renderer
