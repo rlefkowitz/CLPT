@@ -1,0 +1,62 @@
+ # set camera attributes
+ # setCameraPosition 4.216578948221484 2.375 0.34339889486771863
+ # setCameraForward -0.7156478248575902 -0.05930652721420354 0.6959388813727766
+ # setCameraUp -0.042517570286490336 0.9982398187959389 0.04134634672114762
+ # setCameraFocalDistance 7.370589916300956
+ # setCameraApertureRadius 5e-2
+setCameraPosition 0 3 -14
+setCameraForward 0 0 1
+setCameraUp 0 1 0
+setCameraFocalDistance 13.95
+setCameraApertureRadius 1.1e-1
+
+ # toggle options
+enableIbL
+enableDOF
+enableGround
+
+ # backgroundColor 0.1 0.1 0.1325
+
+ # add IbL ('HDR_040_Field.hdr')
+ # Sorry, I had to change the IbL, because the file was too big at 111.7 MB (and GitHub doesn't like big files).
+iblPath res/Frozen_Waterfall_Ref.hdr
+
+set vec3 blue 0.3 0.3 0.9
+
+medium waterMed 0.4 0.45 0.8 0.05 0.4
+
+medium cloudMed 0.8 0.8 0.8 0.1 0.25
+
+material water glass 0.95 0.95 0.95 0.008 1.333333 medium waterMed
+
+material backMat glass 0.9195 0.9225 0.92125 0.103 1.495
+
+material backMatGlow diffuse 0.205 0.213 0.23
+
+material cloud glass 1 1 1 0 1 medium cloudMed
+
+mesh clpt 0 0.25 0 2 2 1 water
+
+mesh cube 0 3.40001 0.45001 16.8 6.8 0.7 backMat
+
+mesh cube 0 3.40001 0.45001 16.2 6.3 0.4 backMatGlow
+
+mesh clpt -10 8 6 1 1 1 cloud
+
+mesh clpt 8 6 5 1 1 1 cloud
+
+mesh clpt 2 10 7 1 1 1 cloud
+
+#mesh clpt -7 1.75 -1 1 1 1 cloud
+
+#mesh clpt 8 1.5 -0.75 1 1 1 cloud
+
+material greenPlastic plastic 0.1 0.5 0.1 0.103
+
+sphere 1.5 -8 1.50001 -3.5 greenPlastic
+
+medium redCloudMed 0.65 0.05 0.05 0.1 0.25
+
+material redCloud glass 0.95 0.95 0.95 0 1.2 medium redCloudMed
+
+mesh dragon 8.6 0.00001 -3.5 0.4 0.4 0.4 redCloud

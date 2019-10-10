@@ -2,9 +2,9 @@ __constant const float eps = 3e-5f;
 __constant const float INF = 1e20f;
 __constant const float PI = 3.14159265358979324f;
 __constant const float invPI = 0.31830988618379067f;
-__constant const bool DOF = true;
+__constant const float inv4PI = 0.07957747154594767f;
+__constant const float PI2 = 6.28318530717958647f;
 __constant const bool bilerp = false;
-__constant const bool USE_BVH = true;
 __constant const float cba = 0.30901699437494742f;
 __constant const float sba = 0.951056516295153572f;
 __constant const float3 ZENITH_DIR = (float3)(1000.0f, 500.0f, -500.0f);
@@ -24,6 +24,12 @@ typedef struct BVHNode {
     int isLeaf;
 } BVHNode;
 
+typedef struct Medium {
+    float3 absCoefficient;
+    float scatterCoefficient;
+    int dummy[3];
+} Medium;
+
 typedef struct Material {
     float3 kd;
     float3 ke;
@@ -32,10 +38,11 @@ typedef struct Material {
     int tex0;
     int tex1;
     int type;
-    int dummy[3];
+    int medIdx;
+    int dummy[2];
 } Material;
 
-__constant Material ground = {(float3)(0.9f, 0.908f, 0.925f), (float3)(0.0f, 0.0f, 0.0f), 0.103f, 1.0f, -1, -1, 1};
+__constant Material ground = {(float3)(0.9f, 0.908f, 0.925f), (float3)(0.0f, 0.0f, 0.0f), 0.00125f, 1.0f, -1, -1, 1};
 
 typedef struct Sphere {
     float3 pos;
@@ -69,12 +76,14 @@ static float rand(unsigned int *seed) {
     x ^= x << 5;
     *seed = x;
     return as_float((x & 0x007FFFFF) | 0x3F800000) - 1.0;
+    /**seed = ((*seed) * 16807) % 2147483647;
+     return (float)(*seed - 1) / 2147483646.0f;*/
 }
 
 float3 tonemapFilmic(const float3 f) {
-    float3 x = max(0.0f, 0.6f*f - 0.004f);
+    float3 x = max(0.0f, f - 0.004f);
     float3 xm = 6.2f*x;
-    return (x*(xm + .5f))/(x*(xm + 1.7f) + 0.06f);
+    return native_divide(x*(xm + 0.5f), x*(xm + 1.7f) + 0.06f);
 }
 
 float2 samplePoly(unsigned int *seed) {
@@ -92,7 +101,7 @@ float2 samplePoly(unsigned int *seed) {
 }
 
 
-Ray createCamRay(const int x_coord, const int y_coord, const int width, const int height,
+Ray createCamRay(const int x_coord, const int y_coord, const int width, const int height, const bool use_DOF,
                  unsigned int *seed, __constant const Camera* cam) {
     
     float offx = rand(seed);
@@ -109,7 +118,7 @@ Ray createCamRay(const int x_coord, const int y_coord, const int width, const in
     const float3 rt = cross(up, fd);
     const float3 raydir = x0*rt + y0*up + fd;
     
-    if(DOF) {
+    if(use_DOF) {
         Ray ray;
         float2 pt = cam->aperture_radius*samplePoly(seed);
         float3 aptOffset = up*pt.y + rt*pt.x;
@@ -155,7 +164,9 @@ bool intersect_sphere(__global Sphere* sphere, const Ray* ray, float3* point, fl
     float c = dot(rayToCenter, rayToCenter) - sphere->radius*sphere->radius;
     float d = b * b - c;
     
-    if (d <= eps) return false;
+    if (d <= eps) {
+        return false;
+    }
     d = native_sqrt(d);
     float temp = b - d;
     if(temp > *t) return false;
@@ -169,7 +180,8 @@ bool intersect_sphere(__global Sphere* sphere, const Ray* ray, float3* point, fl
     return true;
 }
 
-bool intersect_triangle(__global Triangle *triangle, const Ray* ray, float3* point, float3* normal, float* t, const bool cull) {
+bool intersect_triangle(__global Triangle *triangle, const Ray* ray, float3* point, float3* normal, float* t,
+                        const bool cull) {
     
     /*float td = dot(ray->dir, triangle->vn);
      if(-td < eps && m->type != 2)
@@ -226,7 +238,7 @@ bool intersect_ground(const Ray* ray, float3* point, float3* normal, float* t) {
         return false;
     *t = temp;
     *point = p;
-    *normal = GROUND_NORM;
+    *normal = ray->dir.y < 0.0f ? GROUND_NORM : -GROUND_NORM;
     return true;
 }
 
@@ -367,11 +379,12 @@ void intersect_bvh(__global Triangle* triangles, __global BVHNode* nodes, const 
 bool intersect_scene(__global Sphere* spheres, __global Triangle* triangles, __global BVHNode* nodes,
                      __constant Material* materials, const Ray* ray, float3* point, float3* normal, float* t,
                      Material* m, const unsigned int sphere_count, const unsigned int triangle_count,
-                     const unsigned int node_count, const unsigned int material_count) {
+                     const unsigned int node_count, const unsigned int material_count, const bool use_ground) {
     
-    *t = INF;
-    
-    intersect_ground(ray, point, normal, t);
+    float ti = *t;
+
+    if(use_ground)
+        intersect_ground(ray, point, normal, t);
     
     int sphere_id = -1;
     
@@ -399,7 +412,7 @@ bool intersect_scene(__global Sphere* spheres, __global Triangle* triangles, __g
         *m = materials[triangles[i].mtlidx];
     }
     
-    return *t < INF;
+    return *t < ti;
 }
 
 float3 bilerp_func(float3 a, float3 b, float3 c, float3 d, float x, float y) {
@@ -430,7 +443,7 @@ float3 sampleImage(float u, float v, int width, int height, __global float3* img
 void diffuse_brdf(unsigned int *seed, float3 n, float3* wr) {
     float u1 = rand(seed);
     float u2 = rand(seed);
-    *wr = cosineRandHemi(n, u1, u2);
+    *wr = normalize(cosineRandHemi(n, u1, u2));
 }
 
 
@@ -533,8 +546,8 @@ float dielectric_F(float3 i, float3 m, float n_i, float n_t) {
     return a*b;
 }
 
-void dielectric_brdf(unsigned int *seed, float3 n, float3 wo, float3* kd, float3* wr,
-                     float* brdf, float ior, float roughness) {
+void dielectric_brdf(unsigned int *seed, float3 n, float3 wo, float3* kd, float3 *ke ,float3* wr,
+                     float* brdf, float ior, float roughness, bool* transmitted) {
     float3 i = wo;
     bool outside = dot(i, n) < 0;
     float n_o = 1.0f;
@@ -559,8 +572,8 @@ void dielectric_brdf(unsigned int *seed, float3 n, float3 wo, float3* kd, float3
     
     if(rand(seed) <= fres) {
         
-        float3 one = (float3)(1.0f, 1.0f, 1.0f);
-        *kd = one;
+        *kd = (float3)(1.0f, 1.0f, 1.0f);
+        *ke = 0.0f * (*ke);
         
         float idm = dot(i, m);
         *wr = normalize(2.0f*idm*m - i);
@@ -568,6 +581,8 @@ void dielectric_brdf(unsigned int *seed, float3 n, float3 wo, float3* kd, float3
         *brdf = fabs(native_divide(idm, dot(i, n)*ct)) * GGX_G(i, *wr, m, n, a_g);
     }
     else {
+        
+        *transmitted = true;
         
         float nr = native_divide(n_i, n_o);
         float idn = dot(i, n);
@@ -597,7 +612,7 @@ void mirror_brdf(float3 n, float3 wo, float3* wr) {
  
  */
 void bsdf(unsigned int *seed, float3 n, float3 wo, float3* wr, float3* kd, float3* ke,
-          Material m, float* brdf) {
+          Material m, float* brdf, bool* transmitted) {
     
     int type = m.type;
     if(type == 0) {
@@ -607,7 +622,7 @@ void bsdf(unsigned int *seed, float3 n, float3 wo, float3* wr, float3* kd, float
         plastic_brdf(seed, n, wo, kd, wr, brdf, m.roughness);
     }
     else if(type == 2) {
-        dielectric_brdf(seed, n, wo, kd, wr, brdf, m.ior, m.roughness);
+        dielectric_brdf(seed, n, wo, kd, ke, wr, brdf, m.ior, m.roughness, transmitted);
     }
     else if(type == 3) {
         mirror_brdf(n, wo, wr);
@@ -616,11 +631,51 @@ void bsdf(unsigned int *seed, float3 n, float3 wo, float3* wr, float3* kd, float
 }
 
 
+float medSampleADist(Medium med, float maxDist, unsigned int *seed) {
+    return -native_log(rand(seed)) / med.scatterCoefficient;
+}
+
+float medSampleDist(Medium med, float tFar, float weight, float volPDF, float prev, float* pdf) {
+    float distance = prev;
+    if(distance >= tFar) {
+        *pdf = 1.0f;
+        return tFar;
+    }
+    
+    *pdf = native_exp(-med.scatterCoefficient * distance);
+    return distance;
+}
+
+float3 medSampleScatterDir(float *volPDF, unsigned int *seed) {
+    *volPDF = inv4PI;
+    float theta = PI2 * rand(seed);
+    float r1 = 1.0f - 2.0f * rand(seed);
+    float sp = native_sqrt(1.0f - r1*r1);
+    float x = sp * native_cos(theta);
+    float y = sp * native_sin(theta);
+    return (float3)(x, y, r1);
+}
+
+float medScatterDirPdf() {
+    return inv4PI;
+}
+
+float3 medTransmission(Medium med, float distance) {
+    float3 ad = -med.absCoefficient * distance;
+    return native_exp(ad);
+}
+
+
+__constant float airScatterDist = 4000.0f;
+__constant Medium air = {(float3)(0.0f, 0.0f, 0.0f), 1.0f / 4000.0f};
+
+
 float3 trace(__global Sphere* spheres, __global Triangle* triangles, __global BVHNode* nodes,
-             __constant Material* materials, const Ray* camray, const unsigned int sphere_count,
-             const unsigned int triangle_count, const unsigned int node_count,
-             const unsigned int material_count, unsigned int *seed, int ibl_width, int ibl_height,
-             __global float3* ibl) {
+             __constant Material* materials, __constant Medium* mediums, const Ray* camray,
+             const unsigned int sphere_count, const unsigned int triangle_count, const unsigned int node_count,
+             const unsigned int material_count, const unsigned int medium_count, unsigned int *seed,
+             int ibl_width, int ibl_height, __global float3* ibl, const float3 void_color, const bool use_IbL,
+             const bool use_ground) {
     
     Ray ray = *camray;
     
@@ -631,52 +686,118 @@ float3 trace(__global Sphere* spheres, __global Triangle* triangles, __global BV
     float3 normal;
     float t;
     float brdf;
+    float pdf;
     Material mtl;
     float3 wr;
+    bool transmitted;
+    int currMedIdx = -1;
+    Medium med = air;
+    bool hitSurface = false;
+    float volWeight = 1.0f;
+    float volPDF = 1.0f;
     
-    for(int n = 0; n < 50; n++) {
+    for(int n = 0; n < 1500; n++) {
         
         mtl = ground;
         brdf = 1.0f;
+        pdf = 1.0f;
         
         ray.inv_dir = native_recip(ray.dir);
         
-        if(intersect_scene(spheres, triangles, nodes, materials, &ray, &point, &normal, &t, &mtl,
-                           sphere_count, triangle_count, node_count, material_count)) {
-            float3 kd = mtl.kd;
-            float3 ke = mtl.ke;
-            bsdf(seed, normal, -ray.dir, &wr, &kd, &ke, mtl, &brdf);
-            ray.dir = wr;
-            ray.origin = point;
-            color += throughput * ke;
-            throughput *= kd * brdf;
-            
-            if(n > 3) {
-                float p = max(throughput.x, max(throughput.y, throughput.z));
-                if(rand(seed) > p)
-                    return color;
-                
-                throughput *= native_recip(p);
-            }
+        float maxDist = 1e16f;
+        
+        if(currMedIdx != -2) {
+            maxDist = medSampleADist(med, maxDist, seed);
+            t = maxDist;
+        } else {
+            t = maxDist;
         }
-        else {
-            /* image-based lighting */
+        
+        bool hitThisTime = intersect_scene(spheres, triangles, nodes, materials, &ray, &point, &normal, &t, &mtl,
+                                           sphere_count, triangle_count, node_count, material_count, use_ground);
+        
+        hitSurface = true;
+        
+        if(!hitThisTime) {
             float3 env_map_pos = (float3)(0.0f, 15.0f, 0.0f);
             float3 eye = ray.origin - env_map_pos;
             float b = dot(eye, ray.dir);
-            const float c = dot(eye, eye) - 1e16f;
+            const float c = dot(eye, eye) - 1e4f;
             float d = b*b - c;
+            t = native_sqrt(d) - b;
+            hitSurface = false;
+        }
+        
+        if(n > 8) {
+            float p = min(0.95f, max(throughput.x, max(throughput.y, throughput.z)));
+            if(rand(seed) > p)
+                break;
             
-            const float3 smp = eye + ray.dir * (native_sqrt(d) - b);
-            const float v = acospi(smp.y*1e-8f);
-            const float u0 = 0.5f*atan2pi(smp.x, smp.z) + 1.0f;
-            const float u = (u > 1.0f) ? u0 - 1.0f : u0;
-            const float3 ibl_sample = sampleImage(u, v, ibl_width, ibl_height, ibl);
-            /*return (color + throughput * ibl_sample);*/
-            const float3 void_color = (float3) (0.05f, 0.05f, 0.1f);
-            return (color + throughput * void_color * ibl_sample);
+            throughput *= native_recip(p);
+        }
+        
+        if(currMedIdx != -2) {
+            volWeight = 1.0f;
+            float distance = medSampleDist(med, t, volWeight, volPDF, maxDist, &pdf);
+            float3 transmission = medTransmission(med, distance);
+            throughput *= transmission * volWeight;
+            
+            if(distance < t) {
+                hitSurface = false;
+                ray.origin += ray.dir*distance;
+                
+                float dirPdf = 0.0f;
+                ray.dir = medSampleScatterDir(&pdf, seed);
+                continue;
+            }
+        }
+        
+        if(hitSurface) {
+            
+            float3 kd = mtl.kd;
+            float3 ke = mtl.ke;
+            
+            transmitted = false;
+            
+            bsdf(seed, normal, normalize(-1.0f * ray.dir), &wr, &kd, &ke, mtl, &brdf, &transmitted);
+            
+            color += throughput * ke;
+            
+            if(transmitted) {
+                int mtlMed = mtl.medIdx;
+                if(mtlMed != currMedIdx) {
+                    currMedIdx = mtlMed;
+                    med = mediums[mtlMed];
+                } else {
+                    currMedIdx = -1;
+                    med = air;
+                }
+            }
+            ray.origin = point;
+            ray.dir = wr;
+            throughput *= kd * brdf;
+        } else {
+            if(use_IbL) {
+                /* image-based lighting */
+                float3 env_map_pos = (float3)(0.0f, 15.0f, 0.0f);
+                float3 eye = ray.origin - env_map_pos;
+                float b = dot(eye, ray.dir);
+                const float c = dot(eye, eye) - 1e16f;
+                float d = b*b - c;
+                
+                const float3 smp = eye + ray.dir * (native_sqrt(d) - b);
+                const float v = acospi(smp.y*1e-8f);
+                const float u0 = 0.5f*atan2pi(smp.x, smp.z) + 1.0f;
+                const float u = (u > 1.0f) ? u0 - 1.0f : u0;
+                const float3 ibl_sample = sampleImage(u, v, ibl_width, ibl_height, ibl);
+                /*const float3 void_color = (float3) (0.05f, 0.05f, 0.1f);*/
+                return (color + throughput * void_color * ibl_sample);
+            }
+            else {
+                return (color + throughput * void_color);
+            }
             /*const float3 void_color = (float3) (0.05f, 0.05f, 0.1f);
-             return color += throughput * void_color;*/
+            return (color + throughput * void_color);*/
             
             /*float cos2theta = dot(ray.dir, NORMALIZED_ZENITH_DIR);
              float costheta = native_sqrt(0.5f * (cos2theta + 1.0f));
@@ -706,7 +827,8 @@ union Color{ float c; uchar4 components; };
 __kernel void render_kernel(__global float3* accumbuffer, __constant unsigned int* usefulnums,
                             __global unsigned int* randoms, __global float3* ibl, __global float3* output,
                             __global Sphere* spheres, __global Triangle* triangles, __global BVHNode* nodes,
-                            __constant Material* materials, __constant const Camera* cam, int framenumber) {
+                            __constant Material* materials, __constant Medium* mediums,
+                            const float3 void_color, __constant const Camera* cam, int framenumber) {
     
     const unsigned int width = usefulnums[0];
     const unsigned int height = usefulnums[1];
@@ -716,7 +838,12 @@ __kernel void render_kernel(__global float3* accumbuffer, __constant unsigned in
     const unsigned int triangle_amt = usefulnums[5];
     const unsigned int node_amt = usefulnums[6];
     const unsigned int material_amt = usefulnums[7];
-    const unsigned int samples = usefulnums[8];
+    const unsigned int medium_amt = usefulnums[8];
+    const unsigned int samples = usefulnums[9];
+    const unsigned int bools = usefulnums[10];
+    const bool use_DOF = bools & 1;
+    const bool use_IbL = bools & 2;
+    const bool use_ground = bools & 4;
     const int wii = get_global_id(0);
     const int work_item_id = pix_coord(width, height, wii);
     unsigned int seed = randoms[work_item_id];
@@ -726,22 +853,21 @@ __kernel void render_kernel(__global float3* accumbuffer, __constant unsigned in
     float3 result = (float3)(0.0f, 0.0f, 0.0f);
     int spp = framenumber + 1;
     
-    Ray camray = createCamRay(x_coord, height - y_coord, width, height, &seed, cam);
+    Ray camray = createCamRay(x_coord, height - y_coord, width, height, use_DOF, &seed, cam);
     /*float u = (float)x_coord / width;
      float v = (float)y_coord / height;
      result += (float3)(u, v, 1 - u - v);*/
-    float3 currres = trace(spheres, triangles, nodes, materials, &camray,
-                           sphere_amt, triangle_amt, node_amt, material_amt,
-                           &seed, ibl_width, ibl_height, ibl);
+    float3 currres = trace(spheres, triangles, nodes, materials, mediums,
+                           &camray, sphere_amt, triangle_amt, node_amt,
+                           material_amt, medium_amt, &seed, ibl_width, ibl_height,
+                           ibl, void_color, use_IbL, use_ground);
     
     if((isnan(currres.x) != 1) && (isnan(currres.y) != 1) && (isnan(currres.z) != 1))
         result = currres;
     
-    float ispp = native_recip((float) spp);
-    accumbuffer[work_item_id] *= 1.0f - ispp;
-    accumbuffer[work_item_id] += result * ispp;
+    accumbuffer[work_item_id] += result;
     randoms[work_item_id] = seed;
-    float3 res = tonemapFilmic(accumbuffer[work_item_id]);
+    float3 res = tonemapFilmic(native_divide(accumbuffer[work_item_id], spp));
     
     union Color fcolor;
     fcolor.components = (uchar4)(convert_uchar3(clamp(res, 0.0f, 1.0f) * 255), 1);

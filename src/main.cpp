@@ -5,15 +5,11 @@
 #include <random>
 #include <stdlib.h>
 #include <vector>
-#include "bvh.h"
-#include "camera.h"
 #include "cl.hpp"
 #include "cl_gl_interop.h"
-#include "geometry.h"
+#include "configloader.h"
 #include "hdrloader/hdrloader.h"
-#include "linear_algebra.h"
-#include "material.h"
-#include "objloader.h"
+#include "sceneloader.h"
 #include "user_interaction.h"
 
 using namespace std;
@@ -26,6 +22,9 @@ const int samplesPerRun = 1;
 int ibl_width;
 int ibl_height;
 cl_float4* cpu_ibl;
+
+// Background color
+cl_float3 voidcolor;
 
 //cl_float4* cpu_accumbuffer;
 
@@ -41,9 +40,17 @@ int triangle_amt;
 BVHNode* cpu_bvhs;
 int bvhnode_amt;
 
-// BVHNode variables
+// Material variables
 Material* cpu_materials;
 int material_amt;
+
+// Medium variables
+Medium* cpu_mediums;
+int medium_amt;
+
+// Scene variables
+string scn_path;
+Scene scn;
 
 // Random generator
 default_random_engine generator;
@@ -70,6 +77,7 @@ Buffer cl_spheres;
 Buffer cl_triangles;
 Buffer cl_nodes;
 Buffer cl_materials;
+Buffer cl_mediums;
 Buffer cl_camera;
 Buffer cl_usefulnums;
 Buffer cl_accumbuffer;
@@ -226,166 +234,190 @@ void initOpenCL()
 
 void buildScene() {
     
-    vector<Material> materials;
-    materials.clear();
-    
-    vector<Sphere> spheres;
-    spheres.clear();
-
-    int sphere0Mat = materials.size();
-    materials.push_back(Material(Vec3(0.9f, 0.3f, 0.3f)));//, Vec3(4.0f, 4.0f, 4.0f)));
-//    Sphere sphere0(2.0f, Vec3(-9.0f, 2.00001f, 5.0f), sphere0Mat);
-//    spheres.push_back(sphere0);
-
-//    int sphere1Mat = materials.size();
-//    materials.push_back(Material(Vec3(0.3f, 0.9f, 0.3f), 0.103f, 1.495f, 2));
-//    Sphere sphere1(2.0f, Vec3(-3.0f, 2.00001f, 5.0f), sphere1Mat);
-//    spheres.push_back(sphere1);
-//    mats[1].kd = Vec3(0.3f, 0.9f, 0.3f);
-//    mats[1].ke = Vec3(0.0f, 0.0f, 0.0f);
-//    mats[1].roughness = 0.356f;
-//    mats[1].tex0 = -1;
-//    mats[1].tex1 = -1;
-//    mats[1].type = 0;
-//
-//    cpu_spheres[1].radius = 2.0f;
-//    cpu_spheres[1].pos = Vec3(-3.0f, 2.00001f, 5.0f);
-//    cpu_spheres[1].mtl = mats[1];
-//
-//    mats[2].kd = Vec3(0.3f, 0.3f, 0.9f);
-//    mats[2].ke = Vec3(0.0f, 0.0f, 0.0f);
-//    mats[2].tex0 = -1;
-//    mats[2].tex1 = -1;
-//    mats[2].type = 0;
-//
-//    cpu_spheres[2].radius = 2.0f;
-//    cpu_spheres[2].pos = Vec3(3.0f, 2.00001f, 5.0f);
-//    cpu_spheres[2].mtl = mats[2];
-//    int sphere2Mat = materials.size();
-//    materials.push_back(Material(Vec3(0.612f, 0.851f, 0.694f), 0.05f, 1));
-//    Sphere sphere2(2.0f, Vec3(3.0f, 2.00001f, 5.0f), sphere2Mat);
-//    spheres.push_back(sphere2);
-//    cpu_spheres[1].radius = 2.0f;
-//    cpu_spheres[1].pos = Vec3(3.0f, 2.00001f, 5.0f);
-//    cpu_spheres[1].mtl = 1;
-//
-//    mats[2].kd = Vec3(0.3f, 0.3f, 0.9f);
-//    mats[2].ke = Vec3(0.0f, 0.0f, 0.0f);
-//    mats[2].roughness = 0.025f;//0.320936131f;
-//    mats[2].ior = 1.3333333f;
-//    mats[2].tex0 = -1;
-//    mats[2].tex1 = -1;
-//    mats[2].type = 2;
-//
-//    cpu_spheres[2].radius = 2.0f;
-//    cpu_spheres[2].pos = Vec3(-3.0f, 2.00001f, 5.0f);
-//    cpu_spheres[2].mtl = mats[2];
-    
-    // (1 << 1) | 0000 = 0010
-    // 0010 | 0000 = 0010
-    // (0010 & 0010) >> 1
-    
-//    Material dragonMat;
-//    dragonMat.kd = Vec3(0.7f, 0.3f, 0.3f);
-//    dragonMat.ke = Vec3(0.0f, 0.0f, 0.0f);
-//    dragonMat.roughness = 0.103f;//0.320936131f;
-//    dragonMat.ior = 1.495f;
-//    dragonMat.tex0 = -1;
-//    dragonMat.tex1 = -1;
-//    dragonMat.type = 2;
-    
-//    Material deerMat;
-//    deerMat.kd = Vec3(0.3f, 0.3f, 0.9f);//Vec3(0.35f, 0.32f, 0.3f);
-//    deerMat.ke = Vec3(0.0f, 0.0f, 0.0f);
-//    deerMat.roughness = 0.00125f;//0.320936131f;
-//    deerMat.ior = 1.3333333f;
-//    deerMat.tex0 = -1;
-//    deerMat.tex1 = -1;
-//    deerMat.type = 2;
-
-    int emitMat = materials.size();
-    materials.push_back(Material(Vec3(0.0f, 0.0f, 0.0f), Vec3(2.0f, 2.0f, 2.0f)));
-
-    int emitSphereAmt = 12;
-    
-    float pi2 = 2.0f * 3.141592653589793223f;
-    
-    float interval = pi2 / ((float) emitSphereAmt);
-
-    float theta = 0;
-    
-    for(int it = 0; it < emitSphereAmt; it++, theta += interval) {
-        Sphere sphereToAdd(it % 2 == 1 ? 1.0f : 1.5f, Vec3(10.0f*cos(theta) - 3.0f, it % 2 == 1 ? 1.00001f : 1.50001f, 10.0f*sin(theta) + 5.0f), it % 2 == 1 ? sphere0Mat : emitMat);
-        spheres.push_back(sphereToAdd);
+    if(!loadScene(scn, scn_path)) {
+        printf("Error: could not load scene!");
+        exit(1);
     }
-//    spheres.push_back(Sphere(1.0f, Vec3(-3.0f, 1.00001f, 9.0f), emitMat));
-//    spheres.push_back(Sphere(1.0f, Vec3(-3.0f, 1.00001f, 1.0f), emitMat));
-//    spheres.push_back(Sphere(1.0f, Vec3(-7.0f, 1.00001f, 5.0f), emitMat));
-//    spheres.push_back(Sphere(1.0f, Vec3(1.0f, 1.00001f, 5.0f), emitMat));
     
-    
-    vector<Triangle> triangles;
-    triangles.clear();
-    vector<BVHNode> nodes;
-    nodes.clear();
+    vector<Material> materials = scn.materials;
+    vector<Medium> mediums = scn.mediums;
+    vector<Sphere> spheres = scn.spheres;
+    vector<Triangle> triangles = scn.triangles;
+    vector<BVHNode> nodes = scn.nodes;
+
+////    int sphere0Mat = materials.size();
+////    materials.push_back(Material(Vec3(0.9f, 0.3f, 0.3f)));//, Vec3(4.0f, 4.0f, 4.0f)));
+////    Sphere sphere0(2.0f, Vec3(-9.0f, 2.00001f, 5.0f), sphere0Mat);
+////    spheres.push_back(sphere0);
+//
+////    int sphere1Mat = materials.size();
+////    materials.push_back(Material(Vec3(0.3f, 0.9f, 0.3f), 0.103f, 1.495f, 2));
+////    Sphere sphere1(2.0f, Vec3(-3.0f, 2.00001f, 5.0f), sphere1Mat);
+////    spheres.push_back(sphere1);
+////    mats[1].kd = Vec3(0.3f, 0.9f, 0.3f);
+////    mats[1].ke = Vec3(0.0f, 0.0f, 0.0f);
+////    mats[1].roughness = 0.356f;
+////    mats[1].tex0 = -1;
+////    mats[1].tex1 = -1;
+////    mats[1].type = 0;
+////
+////    cpu_spheres[1].radius = 2.0f;
+////    cpu_spheres[1].pos = Vec3(-3.0f, 2.00001f, 5.0f);
+////    cpu_spheres[1].mtl = mats[1];
+////
+////    mats[2].kd = Vec3(0.3f, 0.3f, 0.9f);
+////    mats[2].ke = Vec3(0.0f, 0.0f, 0.0f);
+////    mats[2].tex0 = -1;
+////    mats[2].tex1 = -1;
+////    mats[2].type = 0;
+////
+////    cpu_spheres[2].radius = 2.0f;
+////    cpu_spheres[2].pos = Vec3(3.0f, 2.00001f, 5.0f);
+////    cpu_spheres[2].mtl = mats[2];
+////    int sphere2Mat = materials.size();
+////    materials.push_back(Material(Vec3(0.612f, 0.851f, 0.694f), 0.05f, 1));
+////    Sphere sphere2(2.0f, Vec3(3.0f, 2.00001f, 5.0f), sphere2Mat);
+////    spheres.push_back(sphere2);
+////    cpu_spheres[1].radius = 2.0f;
+////    cpu_spheres[1].pos = Vec3(3.0f, 2.00001f, 5.0f);
+////    cpu_spheres[1].mtl = 1;
+////
+////    mats[2].kd = Vec3(0.3f, 0.3f, 0.9f);
+////    mats[2].ke = Vec3(0.0f, 0.0f, 0.0f);
+////    mats[2].roughness = 0.025f;//0.320936131f;
+////    mats[2].ior = 1.3333333f;
+////    mats[2].tex0 = -1;
+////    mats[2].tex1 = -1;
+////    mats[2].type = 2;
+////
+////    cpu_spheres[2].radius = 2.0f;
+////    cpu_spheres[2].pos = Vec3(-3.0f, 2.00001f, 5.0f);
+////    cpu_spheres[2].mtl = mats[2];
+//
+//    // (1 << 1) | 0000 = 0010
+//    // 0010 | 0000 = 0010
+//    // (0010 & 0010) >> 1
+//
+////    Material dragonMat;
+////    dragonMat.kd = Vec3(0.7f, 0.3f, 0.3f);
+////    dragonMat.ke = Vec3(0.0f, 0.0f, 0.0f);
+////    dragonMat.roughness = 0.103f;//0.320936131f;
+////    dragonMat.ior = 1.495f;
+////    dragonMat.tex0 = -1;
+////    dragonMat.tex1 = -1;
+////    dragonMat.type = 2;
+//
+////    Material deerMat;
+////    deerMat.kd = Vec3(0.3f, 0.3f, 0.9f);//Vec3(0.35f, 0.32f, 0.3f);
+////    deerMat.ke = Vec3(0.0f, 0.0f, 0.0f);
+////    deerMat.roughness = 0.00125f;//0.320936131f;
+////    deerMat.ior = 1.3333333f;
+////    deerMat.tex0 = -1;
+////    deerMat.tex1 = -1;
+////    deerMat.type = 2;
+//
+//    int skinMedium = mediums.size();
+//    mediums.push_back(Medium(Vec3(1.0f, 0.4f, 0.4f), 0.3f, 0.1f));
+//
+//    int skinMat = materials.size();
+//    materials.push_back(Material(Vec3(248.0f / 255.0f, 170.0f / 255.0f, 144.0f / 255.0f), 0.362f, 1.2, 2, skinMedium));
+//
+////    printf("%d\n", materials[skinMat].medIdx);
+//
+////    spheres.push_back(Sphere(2.0f, Vec3(-3.0f, 2.00001f, 5.0f), skinMat));
+////
+////    Medium skMed = mediums[materials[skinMat].medIdx];
+////
+////    printf("(%f, %f, %f)\n", skMed.absCoefficient.x, skMed.absCoefficient.y, skMed.absCoefficient.z);
+//
+//    int emitMat = materials.size();
+//    materials.push_back(Material(Vec3(1.0f, 1.0f, 1.0f), Vec3(4.0f, 4.0f, 4.0f)));
+//
+//    int emitSphereAmt = 12;
+//
+//    float pi2 = 2.0f * 3.141592653589793223f;
+//
+//    float interval = pi2 / ((float) emitSphereAmt);
+//
+//    for(float theta = 0; theta < pi2; theta += interval) {
+//        Sphere sphereToAdd(1.0f, Vec3(10.0f*cos(theta) - 3.0f, 1.00001f, 10.0f*sin(theta) + 5.0f), emitMat);
+//        spheres.push_back(sphereToAdd);
+//    }
+//
+//
+////    int dragonMat = materials.size();
+////    materials.push_back(Material(Vec3(0.7f, 0.3f, 0.3f), 0.103f, 1.495f, 2));
+////    loadObj(triangles, "dragon", skinMat, /*Vec3(-3.0f, 3.00001f, 5.0f)*/Vec3(-3.0f, 0.0f, 5.0f), Vec3(0.4f, 0.4f, 0.4f));
+////    int deerMat = materials.size();
+////    materials.push_back(Material(Vec3(0.3f, 0.3f, 0.9f), 0.103f, 1.3333333f, 1));
+////    loadObj(triangles, "deer", deerMat, /*Vec3(-3.0f, 3.00001f, 5.0f)*/Vec3(-3.0f, 0.0f, 5.0f), Vec3(0.25f, 0.25f, 0.25f));
+////    int sponzaMat = materials.size();
+////    materials.push_back(Material(Vec3(0.9f, 0.9f, 0.9f)));
+////    loadObj(triangles, "sponza", sponzaMat, /*Vec3(-3.0f, 3.00001f, 5.0f)*/Vec3(10.0f, 0.0f, 5.0f), Vec3(0.25f, 0.25f, 0.25f));
 
     
-//    loadObj(triangles, "cube", cubeMat, /*Vec3(-3.0f, 3.00001f, 5.0f)*/Vec3(-3.0f, 1.5f, 5.0f), Vec3(3.0f, 3.0f, 3.0f));
-//    int dragonMat = materials.size();
-//    materials.push_back(Material(Vec3(0.7f, 0.3f, 0.3f), 0.103f, 1.495f, 2));
-//    loadObj(triangles, "dragon", dragonMat, /*Vec3(-3.0f, 3.00001f, 5.0f)*/Vec3(-3.0f, 0.0f, 5.0f), Vec3(0.4f, 0.4f, 0.4f));
-    int deerMat = materials.size();
-    materials.push_back(Material(Vec3(0.3f, 0.3f, 0.9f), 0.103f, 1.3333333f, 1));
-    loadObj(triangles, "deer", deerMat, /*Vec3(-3.0f, 3.00001f, 5.0f)*/Vec3(-3.0f, 0.0f, 5.0f), Vec3(0.25f, 0.25f, 0.25f));
-
-    nodes = build(triangles);
+    /*
+     Construct the BVH for all triangles added to the scene, if any.
+     */
+    if(triangles.size() > 0) {
+        printf("Building BVH for scene with %d triangles...\n", triangles.size());
+        nodes = build(triangles);
+        printf("BVH finished for scene with %d triangles!\n\n", triangles.size());
+    }
+    
     
     sphere_amt = spheres.size();
-    cout << sphere_amt << endl;
-    
-    triangle_amt = triangles.size();
-    cout << triangle_amt << endl;
-    
-    bvhnode_amt = nodes.size();
-    cout << bvhnode_amt << endl;
-    
-    material_amt = materials.size();
-    cout << material_amt << endl;
+    printf("Spheres: %d\n", sphere_amt);
     
     cpu_spheres = new Sphere[sphere_amt];
-    for(int i = 0; i < sphere_amt; i++) {
-        Sphere sr = spheres[i];
+    for(int i = 0; i < sphere_amt; i++)
         cpu_spheres[i] = spheres[i];
-    }
     spheres.clear();
     
+    
+    triangle_amt = triangles.size();
+    printf("Triangles: %d\n", triangle_amt);
+    
     cpu_triangles = new Triangle[triangle_amt];
-    for(int i = 0; i < triangle_amt; i++) {
-        Triangle tr = triangles[i];
+    for(int i = 0; i < triangle_amt; i++)
         cpu_triangles[i] = triangles[i];
-    }
     triangles.clear();
     
+    
+    bvhnode_amt = nodes.size();
+    printf("BVH Nodes: %d\n", bvhnode_amt);
+    
     cpu_bvhs = new BVHNode[bvhnode_amt];
-    for(int i = 0; i < bvhnode_amt; i++) {
-        BVHNode nd = nodes[i];
+    for(int i = 0; i < bvhnode_amt; i++)
         cpu_bvhs[i] = nodes[i];
-    }
     nodes.clear();
     
+    
+    material_amt = materials.size();
+    printf("Materials: %d\n", material_amt);
+    
     cpu_materials = new Material[material_amt];
-    for(int i = 0; i < material_amt; i++) {
-        Material ml = materials[i];
+    for(int i = 0; i < material_amt; i++)
         cpu_materials[i] = materials[i];
-    }
     materials.clear();
+    
+    
+    medium_amt = mediums.size();
+    printf("Mediums: %d\n", medium_amt);
+    
+    cpu_mediums = new Medium[medium_amt];
+    for(int i = 0; i < medium_amt; i++)
+        cpu_mediums[i] = mediums[i];
+    mediums.clear();
+    
+    
     
 }
 
 void createBufferValues() {
     
     // Assemble Useful Numbers
-    cpu_usefulnums = new cl_uint[9];
+    cpu_usefulnums = new cl_uint[11];
     cpu_usefulnums[0] = (cl_uint) window_width;
     cpu_usefulnums[1] = (cl_uint) window_height;
     
@@ -397,9 +429,13 @@ void createBufferValues() {
     
 //    cpu_accumbuffer = new cl_float3[window_width * window_height];
     
+    // Construct the scene
+    buildScene();
+    
     // IBL Loading
 //    string ibl_src_str = "res/HDR_040_Field.hdr";
-    string ibl_src_str = "res/Frozen_Waterfall_Ref.hdr";
+    string ibl_src_str = scn.iblPath;
+    cout << ibl_src_str << endl;
     const char* ibl_src = ibl_src_str.c_str();
     
     HDRLoaderResult result;
@@ -420,26 +456,32 @@ void createBufferValues() {
     cpu_usefulnums[2] = (cl_uint) ibl_width;
     cpu_usefulnums[3] = (cl_uint) ibl_height;
     
-    // Construct the scene
-    buildScene();
     cpu_usefulnums[4] = (cl_uint) sphere_amt;
     cpu_usefulnums[5] = (cl_uint) triangle_amt;
     cpu_usefulnums[6] = (cl_uint) bvhnode_amt;
     cpu_usefulnums[7] = (cl_uint) material_amt;
-    cpu_usefulnums[8] = (cl_uint) samplesPerRun;
+    cpu_usefulnums[8] = (cl_uint) medium_amt;
+    cpu_usefulnums[9] = (cl_uint) samplesPerRun;
+    
+    cpu_usefulnums[10] = 0;
+    cpu_usefulnums[10] |= scn.use_DOF;
+    cpu_usefulnums[10] |= scn.use_IbL << 1;
+    cpu_usefulnums[10] |= scn.use_ground << 2;
     
     initCamera();
     
     cpu_camera = new Camera();
     interactiveCamera->buildRenderCamera(cpu_camera);
     
+    voidcolor = (cl_float3) {{scn.background_color.x, scn.background_color.y, scn.background_color.z}};
+    
 }
 
 void writeBufferValues() {
     
     // Create useful nums buffer on the OpenCL device
-    cl_usefulnums = Buffer(context, CL_MEM_READ_ONLY, 9 * sizeof(cl_uint));
-    queue.enqueueWriteBuffer(cl_usefulnums, CL_TRUE, 0, 9 * sizeof(cl_uint), cpu_usefulnums);
+    cl_usefulnums = Buffer(context, CL_MEM_READ_ONLY, 11 * sizeof(cl_uint));
+    queue.enqueueWriteBuffer(cl_usefulnums, CL_TRUE, 0, 11 * sizeof(cl_uint), cpu_usefulnums);
     
     // Create random buffer on the OpenCL device
     cl_randoms = Buffer(context, CL_MEM_READ_WRITE, window_width * window_height * sizeof(cl_uint));
@@ -453,29 +495,35 @@ void writeBufferValues() {
     
     cout << "Wrote IbL \n";
     
-    // Create scene buffer on the OpenCL device
+    // Create sphere buffer on the OpenCL device
     cl_spheres = Buffer(context, CL_MEM_READ_ONLY, sphere_amt * sizeof(Sphere));
     queue.enqueueWriteBuffer(cl_spheres, CL_TRUE, 0, sphere_amt * sizeof(Sphere), cpu_spheres);
     
     cout << "Wrote spheres \n";
     
-    // Create scene buffer on the OpenCL device
+    // Create triangle buffer on the OpenCL device
     cl_triangles = Buffer(context, CL_MEM_READ_ONLY, triangle_amt * sizeof(Triangle));
     queue.enqueueWriteBuffer(cl_triangles, CL_TRUE, 0, triangle_amt * sizeof(Triangle), cpu_triangles);
     
     cout << "Wrote triangles \n";
     
-    // Create scene buffer on the OpenCL device
+    // Create BVH node buffer on the OpenCL device
     cl_nodes = Buffer(context, CL_MEM_READ_ONLY, bvhnode_amt * sizeof(BVHNode));
     queue.enqueueWriteBuffer(cl_nodes, CL_TRUE, 0, bvhnode_amt * sizeof(BVHNode), cpu_bvhs);
     
     cout << "Wrote BVH \n";
     
-    // Create scene buffer on the OpenCL device
+    // Create material buffer on the OpenCL device
     cl_materials = Buffer(context, CL_MEM_READ_ONLY, material_amt * sizeof(Material));
     queue.enqueueWriteBuffer(cl_materials, CL_TRUE, 0, material_amt * sizeof(Material), cpu_materials);
     
     cout << "Wrote materials \n";
+    
+    // Create medium buffer on the OpenCL device
+    cl_mediums = Buffer(context, CL_MEM_READ_ONLY, medium_amt * sizeof(Medium));
+    queue.enqueueWriteBuffer(cl_mediums, CL_TRUE, 0, medium_amt * sizeof(Medium), cpu_mediums);
+    
+    cout << "Wrote mediums \n";
     
     // Create camera buffer on the OpenCL device
     cl_camera = Buffer(context, CL_MEM_READ_ONLY, sizeof(Camera));
@@ -515,8 +563,10 @@ void initCLKernel(){
     kernel.setArg(6, cl_triangles);
     kernel.setArg(7, cl_nodes);
     kernel.setArg(8, cl_materials);
-    kernel.setArg(9, cl_camera);
-    kernel.setArg(10, framenumber);
+    kernel.setArg(9, cl_mediums);
+    kernel.setArg(10, voidcolor);
+    kernel.setArg(11, cl_camera);
+    kernel.setArg(12, framenumber);
 
 }
 
@@ -591,6 +641,7 @@ void render() {
 //    queue.enqueueWriteBuffer(cl_triangles, CL_TRUE, 0, triangle_amt * sizeof(Triangle), cpu_triangles);
 //    queue.enqueueWriteBuffer(cl_nodes, CL_TRUE, 0, bvhnode_amt * sizeof(BVHNode), cpu_bvhs);
     queue.enqueueWriteBuffer(cl_materials, CL_TRUE, 0, material_amt * sizeof(Material), cpu_materials);
+    queue.enqueueWriteBuffer(cl_mediums, CL_TRUE, 0, medium_amt * sizeof(Medium), cpu_mediums);
     
     
 //    for(int i = 0; i < window_width * window_height; i++) {
@@ -612,8 +663,8 @@ void render() {
     queue.finish();
     
     // kernel.setArg(0, cl_spheres);  //  works even when commented out/
-    kernel.setArg(9, cl_camera);
-    kernel.setArg(10, framenumber - 1);
+    kernel.setArg(11, cl_camera);
+    kernel.setArg(12, framenumber - 1);
     
     runKernel();
     
@@ -635,6 +686,7 @@ void cleanUp(){
 //    delete cpu_triangles;
 //    delete cpu_bvhs;
 //    delete cpu_materials;
+//    delete cpu_mediums;
 //    delete cpu_camera;
 }
 
@@ -652,15 +704,25 @@ void initCamera() {
     /*
      For standard scene
      */
-    Vec3 cam_pos = Vec3(4.216578948221484f, 2.375f, 0.34339889486771863f);
-    Vec3 cam_fd = Vec3(-0.7156478248575902f, -0.05930652721420354f, 0.6959388813727766f);
-    Vec3 cam_up = Vec3(-0.042517570286490336f, 0.9982398187959389f, 0.04134634672114762f);
-    float cam_focal_distance = 7.370589916300956f;
-    float cam_aperture_radius = 8e-2f;
+//    Vec3 cam_pos = Vec3(4.216578948221484f, 2.375f, 0.34339889486771863f);
+//    Vec3 cam_fd = Vec3(-0.7156478248575902f, -0.05930652721420354f, 0.6959388813727766f);
+//    Vec3 cam_up = Vec3(-0.042517570286490336f, 0.9982398187959389f, 0.04134634672114762f);
+//    float cam_focal_distance = 7.370589916300956f;
+//    float cam_aperture_radius = 8e-2f;
+    Vec3 cam_pos = scn.cam_pos;
+    Vec3 cam_fd = scn.cam_fd;
+    Vec3 cam_up = scn.cam_up;
+    float cam_focal_distance = scn.cam_focal_distance;
+    float cam_aperture_radius = scn.cam_aperture_radius;
+    
     interactiveCamera = new InteractiveCamera(cam_pos, cam_fd, cam_up, cam_focal_distance, cam_aperture_radius);
 }
 
 int main(int argc, char** argv){
+    
+    loadConfig("config", &window_width, &window_height, &scn_path, &interactive);
+    
+    cout << "Configurations loaded \n";
     
     initGL(argc, argv);
     

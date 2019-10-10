@@ -1,6 +1,6 @@
 #pragma once
 
-#include "linear_algebra.h"
+#include "vec.h"
 #include "material.h"
 
 using namespace std;

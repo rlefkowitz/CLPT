@@ -30,6 +30,7 @@ struct Vec3
 
 
 
+inline Vec3 log(const Vec3& v){ return Vec3(logf(v.x), logf(v.y), logf(v.z)); }
 inline Vec3 min3(const Vec3& v1, const Vec3& v2){ return Vec3(v1.x < v2.x ? v1.x : v2.x, v1.y < v2.y ? v1.y : v2.y, v1.z < v2.z ? v1.z : v2.z); }
 inline Vec3 max3(const Vec3& v1, const Vec3& v2){ return Vec3(v1.x > v2.x ? v1.x : v2.x, v1.y > v2.y ? v1.y : v2.y, v1.z > v2.z ? v1.z : v2.z); }
 inline Vec3 cross(const Vec3& v1, const Vec3& v2){ return Vec3(v1.y*v2.z - v1.z*v2.y, v1.z*v2.x - v1.x*v2.z, v1.x*v2.y - v1.y*v2.x); }

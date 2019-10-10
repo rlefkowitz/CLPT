@@ -1,7 +1,8 @@
 # CLPT: An Interactive OpenCL-based Monte Carlo Path Tracing Engine
 ## Created and Developed by Ryan Lefkowitz
 
-![Alt text](https://raw.githubusercontent.com/rlefkowitz/CLPT/master/20K%20SPP.png "Demo Scene (1920x1080, 20,000+ SPP), Rendered in Under 10 Minutes")
+![Alt text](https://raw.githubusercontent.com/rlefkowitz/CLPT/master/CoverImage.png)
+The scene `clpt.clpt` (1280x640, 51,000+ SPP), rendered in just over an hour.
 
 ## Features
 - Monte Carlo Path Tracing

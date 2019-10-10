@@ -47,12 +47,16 @@ SET ( CLPATH_HEADERS
   Src/bvh.h
   src/camera.h
   src/cl_gl_interop.h
-  src/geometry.h
+  src/configloader.h
   src/hdrloader/hdrloader.h
-  src/linear_algebra.h
   src/material.h
   src/objloader.h
+  src/parser.h
+  src/primitives.h
+  src/scene.h
+  src/sceneloader.h
   src/user_interaction.h
+  src/vec.h
   )
 
 ADD_LIBRARY(clpath STATIC ${CLPATH_SOURCE} ${CLPATH_HEADERS})

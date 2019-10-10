@@ -1,0 +1,20 @@
+ # set camera attributes
+setCameraPosition 4.216578948221484 2.375 0.34339889486771863
+setCameraForward -0.7156478248575902 -0.05930652721420354 0.6959388813727766
+setCameraUp -0.042517570286490336 0.9982398187959389 0.04134634672114762
+setCameraFocalDistance 7.370589916300956
+setCameraApertureRadius 5e-2
+
+ # toggle options
+enableIbL
+enableDOF
+enableGround
+
+ # add IbL
+iblPath res/Frozen_Waterfall_Ref.hdr
+
+set vec3 blue 0.3 0.3 0.9
+
+material bluePlastic plastic blue 0.103
+
+mesh deer -3 0 5 0.25 0.25 0.25 bluePlastic

@@ -1,6 +1,6 @@
 #pragma once
 
-#include "geometry.h"
+#include "primitives.h"
 
 using namespace std;
 

@@ -15,8 +15,8 @@ int initial_time = time(NULL), final_time, frame_count = 0;
 
 //#define GL_SHARING_EXTENSION "cl_khr_gl_sharing"   // OpenCL-OpenGL interoperability extension
 
-const int window_width = 1920;
-const int window_height = 1080;
+int window_width = 1920;
+int window_height = 1080;
 
 // OpenGL vertex buffer object
 GLuint vbo;
@@ -32,7 +32,7 @@ void initGL(int argc, char** argv){
 	// specify the initial window position
 	glutInitWindowPosition(50, 50);
 	// specify the initial window size
-	glutInitWindowSize(window_width - 1, window_height);
+	glutInitWindowSize(window_width, window_height);
 	// create the window and set title
 	glutCreateWindow("Basic OpenCL path tracer");
 
@@ -51,7 +51,7 @@ void initGL(int argc, char** argv){
 	// initialise OpenGL
 	glClearColor(0.0, 0.0, 0.0, 1.0);
 	glMatrixMode(GL_PROJECTION);
-	gluOrtho2D(0.0, window_width, 0.0, window_height);
+	gluOrtho2D(0.0, window_width - 1, 0.0, window_height);
 }
 
 void createVBO(GLuint* vbo)
