@@ -181,10 +181,8 @@ bool intersect_sphere(__global Sphere* sphere, const Ray* ray, float3* point, fl
 bool intersect_triangle(__global Triangle *triangle, const Ray* ray, float3* point, float3* normal, float* t,
                         const bool cull) {
     
-    float3 v0v1 = triangle->v1 - triangle->v0;
-    float3 v0v2 = triangle->v2 - triangle->v0;
-    float3 pvec = cross(ray->dir, v0v2);
-    float det = dot(v0v1, pvec);
+    float3 pvec = cross(ray->dir, triangle->v2);
+    float det = dot(triangle->v1, pvec);
     
     /* Backface culling */
     /*if(det < eps && false) return false;*/
@@ -195,15 +193,15 @@ bool intersect_triangle(__global Triangle *triangle, const Ray* ray, float3* poi
     float u = dot(tvec, pvec) * invDet;
     if(u < 0 || u > 1) return false;
     
-    float3 qvec = cross(tvec, v0v1);
+    float3 qvec = cross(tvec, triangle->v1);
     float v = dot(ray->dir, qvec) * invDet;
     if(v < 0 || u + v > 1) return false;
     
-    float temp = dot(v0v2, qvec) * invDet;
+    float temp = dot(triangle->v2, qvec) * invDet;
     if(temp < eps || temp > *t) return false;
     
-    *point = v0v1;
-    *normal = v0v2;
+    *point = triangle->v1;
+    *normal = triangle->v2;
     *t = temp;
     return true;
 }
@@ -670,7 +668,7 @@ float3 trace(__global Sphere* spheres, __global Triangle* triangles, __global BV
     Material mtl;
     float3 wr;
     bool transmitted;
-    int currMedIdx = -1;
+    int currMedIdx = -2;
     Medium med = air;
     bool hitSurface = false;
     float volWeight = 1.0f;
@@ -749,7 +747,7 @@ float3 trace(__global Sphere* spheres, __global Triangle* triangles, __global BV
                     currMedIdx = mtlMed;
                     med = mediums[mtlMed];
                 } else {
-                    currMedIdx = -1;
+                    currMedIdx = -2;
                     med = air;
                 }
             }

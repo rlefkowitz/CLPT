@@ -349,6 +349,10 @@ vector<BVHNode> build(vector<Triangle> &triangles) {
     triangles.clear();
     triangles.insert(triangles.end(), flatTriangles.begin(), flatTriangles.end());
     
+    for(Triangle& t : triangles) {
+        makeRenderReady(t);
+    }
+    
 //    vector<int> parentlist;
 //    parentlist.clear();
 //    vector<int> child1list;

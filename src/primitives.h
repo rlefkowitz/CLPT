@@ -50,6 +50,11 @@ struct Triangle
     
 };
 
+void makeRenderReady(Triangle& t) {
+    t.v1 -= t.v0;
+    t.v2 -= t.v0;
+}
+
 struct Mesh
 {
     Vec3 box[2];
