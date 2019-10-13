@@ -4,6 +4,7 @@ PROJECT ( CLPath-V0.0.1 )
 
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11")
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -framework OpenCL")
+add_compile_definitions(CL_HPP_ENABLE_SIZE_T_COMPATIBILITY)
 
 #########################################################
 # FIND GLUT

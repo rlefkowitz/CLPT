@@ -10,6 +10,8 @@ __constant const float sba = 0.951056516295153572f;
 __constant const float3 ZENITH_DIR = (float3)(1000.0f, 500.0f, -500.0f);
 __constant const float3 NORMALIZED_ZENITH_DIR = (float3)(0.81649658f, 0.40824829f, -0.40824829f);
 
+__constant sampler_t sampler = CLK_NORMALIZED_COORDS_FALSE | CLK_ADDRESS_CLAMP_TO_EDGE | CLK_FILTER_NEAREST;
+
 typedef struct Ray {
     float3 origin;
     float3 dir;
@@ -178,30 +180,33 @@ bool intersect_sphere(__global Sphere* sphere, const Ray* ray, float3* point, fl
     return true;
 }
 
-bool intersect_triangle(__global Triangle *triangle, const Ray* ray, float3* point, float3* normal, float* t,
-                        const bool cull) {
+bool intersect_triangle(__read_only image2d_t trianglev_img, const int i, const Ray* ray,
+                        float3* point, float3* normal, float* t, const bool cull) {
     
-    float3 pvec = cross(ray->dir, triangle->v2);
-    float det = dot(triangle->v1, pvec);
+    float3 v2 = read_imagef(trianglev_img, sampler, (int2)(i, 2)).xyz;
+    float3 v1 = read_imagef(trianglev_img, sampler, (int2)(i, 1)).xyz;
+    float3 v0 = read_imagef(trianglev_img, sampler, (int2)(i, 0)).xyz;
+    float3 pvec = cross(ray->dir, v2);
+    float det = dot(v1, pvec);
     
     /* Backface culling */
     /*if(det < eps && false) return false;*/
     
     float invDet = native_recip(det);
     
-    float3 tvec = ray->origin - triangle->v0;
+    float3 tvec = ray->origin - v0;
     float u = dot(tvec, pvec) * invDet;
     if(u < 0 || u > 1) return false;
     
-    float3 qvec = cross(tvec, triangle->v1);
+    float3 qvec = cross(tvec, v1);
     float v = dot(ray->dir, qvec) * invDet;
     if(v < 0 || u + v > 1) return false;
     
-    float temp = dot(triangle->v2, qvec) * invDet;
+    float temp = dot(v2, qvec) * invDet;
     if(temp < eps || temp > *t) return false;
     
-    *point = triangle->v1;
-    *normal = triangle->v2;
+    *point = v1;
+    *normal = v2;
     *t = temp;
     return true;
 }
@@ -220,10 +225,10 @@ bool intersect_ground(const Ray* ray, float3* point, float3* normal, float* t) {
     return true;
 }
 
-bool intersect_aabb(__global BVHNode* b, const Ray* r, float* t) {
+bool intersect_aabb(const float3 min, const float3 max, const Ray* r, float* t) {
     float3 invD = r->inv_dir;
-    float3 t0s = (b->box[0] - r->origin) * invD;
-    float3 t1s = (b->box[1] - r->origin) * invD;
+    float3 t0s = (min - r->origin) * invD;
+    float3 t1s = (max - r->origin) * invD;
     
     float3 tsmaller = fmin(t0s, t1s);
     float3 tbigger = fmax(t0s, t1s);
@@ -246,10 +251,10 @@ bool intersect_aabb_lw(__global BVHNode* b, const Ray* r, float* t) {
     return (tmin <= *t);
 }
 
-float intersect_aabb_dist(__global BVHNode* b, const Ray* r, float* t) {
+float intersect_aabb_dist(const float3 min, const float3 max, const Ray* r, float* t) {
     float3 invD = r->inv_dir;
-    float3 t0s = (b->box[0] - r->origin) * invD;
-    float3 t1s = (b->box[1] - r->origin) * invD;
+    float3 t0s = (min - r->origin) * invD;
+    float3 t1s = (max - r->origin) * invD;
     
     float3 tsmaller = fmin(t0s, t1s);
     float3 tbigger = fmax(t0s, t1s);
@@ -260,14 +265,16 @@ float intersect_aabb_dist(__global BVHNode* b, const Ray* r, float* t) {
     return (tmin <= tmax) ? tmin : INF;
 }
 
-void intersect_bvh(__global Triangle* triangles, __global BVHNode* nodes, const Ray* ray, float3* point,
-                   float3* normal, float* t, const unsigned int triangle_count, const unsigned int node_count,
-                   int* triangle_id, int* sphere_id) {
+void intersect_bvh(const Ray* ray, float3* point, float3* normal, float* t, int* triangle_id, int* sphere_id,
+                   __read_only image1d_t node_min_img, __read_only image1d_t node_max_img,
+                   __read_only image1d_t node_info_img, __read_only image2d_t trianglev_img) {
     
-    if(!intersect_aabb(&nodes[0], ray, t))
+    if(!intersect_aabb(read_imagef(node_min_img, sampler, 0).xyz,
+                       read_imagef(node_max_img, sampler, 0).xyz,
+                       ray, t))
         return;
     
-    BVHNode current = nodes[0];
+    int4 current = read_imagei(node_info_img, sampler, 0);
     
     int currentIdx = 0;
     int lastIdx = -1;
@@ -286,20 +293,20 @@ void intersect_bvh(__global Triangle* triangles, __global BVHNode* nodes, const 
                 return;
             
             lastIdx = currentIdx;
-            currentIdx = current.parent;
+            currentIdx = current.x;
             branch &= (2 << depth) - 1;
             depth--;
         } else {
             depth++;
         }
         
-        current = nodes[currentIdx];
+        current = read_imagei(node_info_img, sampler, currentIdx);
         
         /*
          BVH Traversal: Either of the first two conditions are true if currently moving up the tree
          */
-        child1 = current.child1;
-        child2 = current.child2;
+        child1 = current.y;
+        child2 = current.z;
         
         goingUp = false;
         
@@ -321,9 +328,13 @@ void intersect_bvh(__global Triangle* triangles, __global BVHNode* nodes, const 
             continue;
         }
         
-        if(current.isLeaf != 1) {
-            float dist1 = intersect_aabb_dist(&nodes[child1], ray, t);
-            float dist2 = intersect_aabb_dist(&nodes[child2], ray, t);
+        if(current.w != 1) {
+            float dist1 = intersect_aabb_dist(read_imagef(node_min_img, sampler, child1).xyz,
+                                              read_imagef(node_max_img, sampler, child1).xyz,
+                                              ray, t);
+            float dist2 = intersect_aabb_dist(read_imagef(node_min_img, sampler, child2).xyz,
+                                              read_imagef(node_max_img, sampler, child2).xyz,
+                                              ray, t);
             bool hit1 = dist1 != INF;
             bool hit2 = dist2 != INF;
             
@@ -342,7 +353,7 @@ void intersect_bvh(__global Triangle* triangles, __global BVHNode* nodes, const 
             
             for (int i = child1; i < child2; i++)  {
                 
-                if(intersect_triangle(&triangles[i], ray, point, normal, t, false)) {
+                if(intersect_triangle(trianglev_img, i, ray, point, normal, t, false)) {
                     *triangle_id = i;
                     *sphere_id = -1;
                 }
@@ -354,10 +365,12 @@ void intersect_bvh(__global Triangle* triangles, __global BVHNode* nodes, const 
     }
 }
 
-bool intersect_scene(__global Sphere* spheres, __global Triangle* triangles, __global BVHNode* nodes,
-                     __constant Material* materials, const Ray* ray, float3* point, float3* normal, float* t,
-                     Material* m, const unsigned int sphere_count, const unsigned int triangle_count,
-                     const unsigned int node_count, const unsigned int material_count, const bool use_ground) {
+bool intersect_scene(__global Sphere* spheres, __constant Material* materials, const Ray* ray,
+                     float3* point, float3* normal, float* t, Material* m, const unsigned int sphere_count,
+                     const unsigned int node_count, const unsigned int material_count, const bool use_ground,
+                     __read_only image1d_t node_min_img, __read_only image1d_t node_max_img,
+                     __read_only image1d_t node_info_img, __read_only image2d_t trianglev_img,
+                     __read_only image1d_t trimtlidx_img) {
     
     float ti = *t;
 
@@ -376,7 +389,8 @@ bool intersect_scene(__global Sphere* spheres, __global Triangle* triangles, __g
     int triangle_id = -1;
     
     if(node_count > 0)
-        intersect_bvh(triangles, nodes, ray, point, normal, t, triangle_count, node_count, &triangle_id, &sphere_id);
+        intersect_bvh(ray, point, normal, t, &triangle_id, &sphere_id, node_min_img,
+                      node_max_img, node_info_img, trianglev_img);
     
     if(sphere_id != -1) {
         int i = sphere_id;
@@ -387,7 +401,7 @@ bool intersect_scene(__global Sphere* spheres, __global Triangle* triangles, __g
         int i = triangle_id;
         *normal = normalize(cross(*point, *normal));
         *point = ray->origin + (*t)*ray->dir;
-        *m = materials[triangles[i].mtlidx];
+        *m = materials[read_imagei(trimtlidx_img, sampler, triangle_id).x];
     }
     
     return *t < ti;
@@ -648,12 +662,12 @@ __constant float airScatterDist = 4000.0f;
 __constant Medium air = {(float3)(0.0f, 0.0f, 0.0f), 1.0f / 4000.0f};
 
 
-float3 trace(__global Sphere* spheres, __global Triangle* triangles, __global BVHNode* nodes,
-             __constant Material* materials, __constant Medium* mediums, const Ray* camray,
-             const unsigned int sphere_count, const unsigned int triangle_count, const unsigned int node_count,
-             const unsigned int material_count, const unsigned int medium_count, unsigned int *seed,
-             int ibl_width, int ibl_height, __global float3* ibl, const float3 void_color, const bool use_IbL,
-             const bool use_ground) {
+float3 trace(__global Sphere* spheres, __constant Material* materials, __constant Medium* mediums, const Ray* camray,
+             const unsigned int sphere_count, const unsigned int node_count, const unsigned int material_count,
+             const unsigned int medium_count, unsigned int *seed, int ibl_width, int ibl_height, __global float3* ibl,
+             const float3 void_color, const bool use_IbL, const bool use_ground, __read_only image1d_t node_min_img,
+             __read_only image1d_t node_max_img, __read_only image1d_t node_info_img, __read_only image2d_t trianglev_img,
+             __read_only image1d_t trimtlidx_img) {
     
     Ray ray = *camray;
     
@@ -691,8 +705,9 @@ float3 trace(__global Sphere* spheres, __global Triangle* triangles, __global BV
             t = maxDist;
         }
         
-        bool hitThisTime = intersect_scene(spheres, triangles, nodes, materials, &ray, &point, &normal, &t, &mtl,
-                                           sphere_count, triangle_count, node_count, material_count, use_ground);
+        bool hitThisTime = intersect_scene(spheres, materials, &ray, &point, &normal, &t, &mtl, sphere_count,
+                                           node_count, material_count, use_ground, node_min_img, node_max_img,
+                                           node_info_img, trianglev_img, trimtlidx_img);
         
         hitSurface = true;
         
@@ -801,9 +816,11 @@ union Color{ float c; uchar4 components; };
 
 __kernel void render_kernel(__global float3* accumbuffer, __constant unsigned int* usefulnums,
                             __global unsigned int* randoms, __global float3* ibl, __global float3* output,
-                            __global Sphere* spheres, __global Triangle* triangles, __global BVHNode* nodes,
-                            __constant Material* materials, __constant Medium* mediums,
-                            const float3 void_color, __constant const Camera* cam, int framenumber) {
+                            __global Sphere* spheres, __constant Material* materials, __constant Medium* mediums,
+                            const float3 void_color, __constant const Camera* cam, int framenumber,
+                            __read_only image1d_t node_min_img, __read_only image1d_t node_max_img,
+                            __read_only image1d_t node_info_img, __read_only image2d_t trianglev_img,
+                            __read_only image1d_t trimtlidx_img) {
     
     const unsigned int width = usefulnums[0];
     const unsigned int height = usefulnums[1];
@@ -830,10 +847,10 @@ __kernel void render_kernel(__global float3* accumbuffer, __constant unsigned in
     
     Ray camray = createCamRay(x_coord, height - y_coord, width, height, use_DOF, &seed, cam);
     
-    float3 currres = trace(spheres, triangles, nodes, materials, mediums,
-                           &camray, sphere_amt, triangle_amt, node_amt,
-                           material_amt, medium_amt, &seed, ibl_width, ibl_height,
-                           ibl, void_color, use_IbL, use_ground);
+    float3 currres = trace(spheres, materials, mediums, &camray, sphere_amt, node_amt,
+                           material_amt, medium_amt, &seed, ibl_width, ibl_height, ibl,
+                           void_color, use_IbL, use_ground, node_min_img, node_max_img,
+                           node_info_img, trianglev_img, trimtlidx_img);
     
     if(isnan(currres).x == 0)
         result = currres;

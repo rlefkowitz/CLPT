@@ -39,6 +39,11 @@ int sphere_amt;
 Triangle* cpu_triangles;
 int triangle_amt;
 
+Vec3* cpu_triangle0;
+Vec3* cpu_triangle1;
+Vec3* cpu_triangle2;
+cl_int* cpu_trimtlidx;
+
 // BVHNode variables
 BVHNode* cpu_bvhs;
 int bvhnode_amt;
@@ -81,6 +86,8 @@ Program program;
 Image1D cl_img_node_min;
 Image1D cl_img_node_max;
 Image1D cl_img_node_info;
+Image2D cl_img_trianglev;
+Image1D cl_img_trimtlidx;
 
 // Device (CPU/GPU) Buffers
 Buffer cl_output;
@@ -92,6 +99,10 @@ Buffer cl_nodes;
 Buffer cl_node_min;
 Buffer cl_node_max;
 Buffer cl_node_info;
+Buffer cl_triangle0;
+Buffer cl_triangle1;
+Buffer cl_triangle2;
+Buffer cl_trimtlidx;
 Buffer cl_materials;
 Buffer cl_mediums;
 Buffer cl_camera;
@@ -399,8 +410,17 @@ void buildScene() {
     printf("Triangles: %d\n", triangle_amt);
     
     cpu_triangles = new Triangle[triangle_amt];
-    for(int i = 0; i < triangle_amt; i++)
+    cpu_triangle0 = new Vec3[triangle_amt];
+    cpu_triangle1 = new Vec3[triangle_amt];
+    cpu_triangle2 = new Vec3[triangle_amt];
+    cpu_trimtlidx = new cl_int[triangle_amt];
+    for(int i = 0; i < triangle_amt; i++) {
         cpu_triangles[i] = triangles[i];
+        cpu_triangle0[i] = triangles[i].v0;
+        cpu_triangle1[i] = triangles[i].v1;
+        cpu_triangle2[i] = triangles[i].v2;
+        cpu_trimtlidx[i] = triangles[i].mtlidx;
+    }
     triangles.clear();
     
     
@@ -507,30 +527,55 @@ void createBufferValues() {
 void writeImages() {
     
     ImageFormat imgfmt_vec(CL_RGBA, CL_FLOAT);
-    const size_t<3> dst_origin_node_min;
-    const size_t<3> region_node_min;
+    cl::size_t<3> dst_origin;
+    dst_origin[0] = 0;
+    dst_origin[1] = 0;
+    dst_origin[2] = 0;
+    cl::size_t<3> region;
+    region[0] = bvhnode_amt;
+    region[1] = 1;
+    region[2] = 1;
     
     cl_img_node_min = Image1D(context, CL_MEM_READ_ONLY, imgfmt_vec, bvhnode_amt);
-    queue.enqueueCopyBufferToImage(cl_node_min, cl_img_node_min, 0, dst_origin_node_min, region_node_min);
+    queue.enqueueCopyBufferToImage(cl_node_min, cl_img_node_min, 0, dst_origin, region);
     
     cout << "Made node min image \n";
-    
-    const size_t<3> dst_origin_node_max;
-    const size_t<3> region_node_max;
     
     cl_img_node_max = Image1D(context, CL_MEM_READ_ONLY, imgfmt_vec, bvhnode_amt);
-    queue.enqueueCopyBufferToImage(cl_node_max, cl_img_node_max, 0, dst_origin_node_max, region_node_max);
+    queue.enqueueCopyBufferToImage(cl_node_max, cl_img_node_max, 0, dst_origin, region);
     
-    cout << "Made node min image \n";
+    cout << "Made node max image \n";
     
     ImageFormat imgfmt_node_info(CL_RGBA, CL_SIGNED_INT32);
-    const size_t<3> dst_origin_node_info;
-    const size_t<3> region_node_info;
     
     cl_img_node_info = Image1D(context, CL_MEM_READ_ONLY, imgfmt_node_info, bvhnode_amt);
-    queue.enqueueCopyBufferToImage(cl_node_info, cl_img_node_info, 0, dst_origin_node_info, region_node_info);
+    queue.enqueueCopyBufferToImage(cl_node_info, cl_img_node_info, 0, dst_origin, region);
     
     cout << "Made node info image \n";
+    
+    region[0] = triangle_amt;
+    
+    cl_img_trianglev = Image2D(context, CL_MEM_READ_ONLY, imgfmt_vec, triangle_amt, 3);
+    queue.enqueueCopyBufferToImage(cl_triangle0, cl_img_trianglev, 0, dst_origin, region);
+    
+    dst_origin[1] = 1;
+    
+    queue.enqueueCopyBufferToImage(cl_triangle1, cl_img_trianglev, 0, dst_origin, region);
+    
+    dst_origin[1] = 2;
+    
+    queue.enqueueCopyBufferToImage(cl_triangle2, cl_img_trianglev, 0, dst_origin, region);
+    
+    dst_origin[1] = 0;
+    
+    cout << "Made triangle vs image \n";
+    
+    ImageFormat imgfmt_mtlidx(CL_R, CL_SIGNED_INT32);
+    
+    cl_img_trimtlidx = Image1D(context, CL_MEM_READ_ONLY, imgfmt_mtlidx, triangle_amt);
+    queue.enqueueCopyBufferToImage(cl_trimtlidx, cl_img_trimtlidx, 0, dst_origin, region);
+    
+    cout << "Made triangle material index image \n";
 }
 
 void writeBufferValues() {
@@ -564,6 +609,30 @@ void writeBufferValues() {
     queue.enqueueWriteBuffer(cl_triangles, CL_TRUE, 0, triangle_amt * sizeof(Triangle), cpu_triangles);
     
     cout << "Wrote triangles \n";
+    
+    // Create triangle buffer on the OpenCL device
+    cl_triangle0 = Buffer(context, CL_MEM_READ_ONLY, triangle_amt * sizeof(Vec3));
+    queue.enqueueWriteBuffer(cl_triangle0, CL_TRUE, 0, triangle_amt * sizeof(Vec3), cpu_triangle0);
+    
+    cout << "Wrote triangle v0s \n";
+    
+    // Create triangle buffer on the OpenCL device
+    cl_triangle1 = Buffer(context, CL_MEM_READ_ONLY, triangle_amt * sizeof(Vec3));
+    queue.enqueueWriteBuffer(cl_triangle1, CL_TRUE, 0, triangle_amt * sizeof(Vec3), cpu_triangle1);
+    
+    cout << "Wrote triangle v1s \n";
+    
+    // Create triangle buffer on the OpenCL device
+    cl_triangle2 = Buffer(context, CL_MEM_READ_ONLY, triangle_amt * sizeof(Vec3));
+    queue.enqueueWriteBuffer(cl_triangle2, CL_TRUE, 0, triangle_amt * sizeof(Vec3), cpu_triangle2);
+    
+    cout << "Wrote triangle v2s \n";
+    
+    // Create triangle buffer on the OpenCL device
+    cl_trimtlidx = Buffer(context, CL_MEM_READ_ONLY, triangle_amt * sizeof(cl_uint));
+    queue.enqueueWriteBuffer(cl_trimtlidx, CL_TRUE, 0, triangle_amt * sizeof(cl_int), cpu_trimtlidx);
+    
+    cout << "Wrote triangle material indexes \n";
     
     // Create BVH node buffer on the OpenCL device
     cl_nodes = Buffer(context, CL_MEM_READ_ONLY, bvhnode_amt * sizeof(BVHNode));
@@ -639,16 +708,16 @@ void initCLKernel(){
     kernel.setArg(3, cl_ibl);
     kernel.setArg(4, cl_vbo);
     kernel.setArg(5, cl_spheres);
-    kernel.setArg(6, cl_triangles);
-    kernel.setArg(7, cl_nodes);
-    kernel.setArg(8, cl_materials);
-    kernel.setArg(9, cl_mediums);
-    kernel.setArg(10, voidcolor);
-    kernel.setArg(11, cl_camera);
-    kernel.setArg(12, framenumber);
-    kernel.setArg(13, cl_img_node_min);
-    kernel.setArg(14, cl_img_node_max);
-    kernel.setArg(15, cl_img_node_info);
+    kernel.setArg(6, cl_materials);
+    kernel.setArg(7, cl_mediums);
+    kernel.setArg(8, voidcolor);
+    kernel.setArg(9, cl_camera);
+    kernel.setArg(10, framenumber);
+    kernel.setArg(11, cl_img_node_min);
+    kernel.setArg(12, cl_img_node_max);
+    kernel.setArg(13, cl_img_node_info);
+    kernel.setArg(14, cl_img_trianglev);
+    kernel.setArg(15, cl_img_trimtlidx);
 
 }
 
@@ -776,8 +845,8 @@ void render() {
     queue.finish();
     
     // kernel.setArg(0, cl_spheres);  //  works even when commented out/
-    kernel.setArg(11, cl_camera);
-    kernel.setArg(12, framenumber - 1);
+    kernel.setArg(9, cl_camera);
+    kernel.setArg(10, framenumber - 1);
     
     runKernel();
     
