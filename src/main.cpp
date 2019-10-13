@@ -1,5 +1,6 @@
 #define PI 3.141592653589793238f
 
+#include <array>
 #include <iostream>
 #include <fstream>
 #include <random>
@@ -42,6 +43,10 @@ int triangle_amt;
 BVHNode* cpu_bvhs;
 int bvhnode_amt;
 
+Vec3* cpu_node_min;
+Vec3* cpu_node_max;
+NodeInfo* cpu_node_info;
+
 // Material variables
 Material* cpu_materials;
 int material_amt;
@@ -72,6 +77,11 @@ Kernel kernel;
 Context context;
 Program program;
 
+// OpenCL Image Buffers;
+Image1D cl_img_node_min;
+Image1D cl_img_node_max;
+Image1D cl_img_node_info;
+
 // Device (CPU/GPU) Buffers
 Buffer cl_output;
 Buffer cl_randoms;
@@ -79,6 +89,9 @@ Buffer cl_ibl;
 Buffer cl_spheres;
 Buffer cl_triangles;
 Buffer cl_nodes;
+Buffer cl_node_min;
+Buffer cl_node_max;
+Buffer cl_node_info;
 Buffer cl_materials;
 Buffer cl_mediums;
 Buffer cl_camera;
@@ -395,8 +408,15 @@ void buildScene() {
     printf("BVH Nodes: %d\n", bvhnode_amt);
     
     cpu_bvhs = new BVHNode[bvhnode_amt];
-    for(int i = 0; i < bvhnode_amt; i++)
+    cpu_node_min = new Vec3[bvhnode_amt];
+    cpu_node_max = new Vec3[bvhnode_amt];
+    cpu_node_info = new NodeInfo[bvhnode_amt];
+    for(int i = 0; i < bvhnode_amt; i++) {
         cpu_bvhs[i] = nodes[i];
+        cpu_node_min[i] = nodes[i].box[0];
+        cpu_node_max[i] = nodes[i].box[1];
+        cpu_node_info[i] = nodes[i].getInfo();
+    }
     nodes.clear();
     
     
@@ -484,11 +504,42 @@ void createBufferValues() {
     
 }
 
+void writeImages() {
+    
+    ImageFormat imgfmt_vec(CL_RGBA, CL_FLOAT);
+    const size_t<3> dst_origin_node_min;
+    const size_t<3> region_node_min;
+    
+    cl_img_node_min = Image1D(context, CL_MEM_READ_ONLY, imgfmt_vec, bvhnode_amt);
+    queue.enqueueCopyBufferToImage(cl_node_min, cl_img_node_min, 0, dst_origin_node_min, region_node_min);
+    
+    cout << "Made node min image \n";
+    
+    const size_t<3> dst_origin_node_max;
+    const size_t<3> region_node_max;
+    
+    cl_img_node_max = Image1D(context, CL_MEM_READ_ONLY, imgfmt_vec, bvhnode_amt);
+    queue.enqueueCopyBufferToImage(cl_node_max, cl_img_node_max, 0, dst_origin_node_max, region_node_max);
+    
+    cout << "Made node min image \n";
+    
+    ImageFormat imgfmt_node_info(CL_RGBA, CL_SIGNED_INT32);
+    const size_t<3> dst_origin_node_info;
+    const size_t<3> region_node_info;
+    
+    cl_img_node_info = Image1D(context, CL_MEM_READ_ONLY, imgfmt_node_info, bvhnode_amt);
+    queue.enqueueCopyBufferToImage(cl_node_info, cl_img_node_info, 0, dst_origin_node_info, region_node_info);
+    
+    cout << "Made node info image \n";
+}
+
 void writeBufferValues() {
     
     // Create useful nums buffer on the OpenCL device
     cl_usefulnums = Buffer(context, CL_MEM_READ_ONLY, 11 * sizeof(cl_uint));
     queue.enqueueWriteBuffer(cl_usefulnums, CL_TRUE, 0, 11 * sizeof(cl_uint), cpu_usefulnums);
+    
+    cout << "Wrote useful numbers \n";
     
     // Create random buffer on the OpenCL device
     cl_randoms = Buffer(context, CL_MEM_READ_WRITE, window_width * window_height * sizeof(cl_uint));
@@ -520,6 +571,24 @@ void writeBufferValues() {
     
     cout << "Wrote BVH \n";
     
+    // Create BVH node buffer on the OpenCL device
+    cl_node_min = Buffer(context, CL_MEM_READ_ONLY, bvhnode_amt * sizeof(Vec3));
+    queue.enqueueWriteBuffer(cl_node_min, CL_TRUE, 0, bvhnode_amt * sizeof(Vec3), cpu_node_min);
+    
+    cout << "WWrote to BVH Node Min Buffer \n";
+    
+    // Create BVH node buffer on the OpenCL device
+    cl_node_max = Buffer(context, CL_MEM_READ_ONLY, bvhnode_amt * sizeof(Vec3));
+    queue.enqueueWriteBuffer(cl_node_max, CL_TRUE, 0, bvhnode_amt * sizeof(Vec3), cpu_node_max);
+    
+    cout << "Wrote to BVH Node Max Buffer \n";
+    
+    // Create BVH node buffer on the OpenCL device
+    cl_node_info = Buffer(context, CL_MEM_READ_ONLY, bvhnode_amt * sizeof(NodeInfo));
+    queue.enqueueWriteBuffer(cl_node_info, CL_TRUE, 0, bvhnode_amt * sizeof(NodeInfo), cpu_node_info);
+    
+    cout << "Wrote to BVH Node Info Buffer \n";
+    
     // Create material buffer on the OpenCL device
     cl_materials = Buffer(context, CL_MEM_READ_ONLY, material_amt * sizeof(Material));
     queue.enqueueWriteBuffer(cl_materials, CL_TRUE, 0, material_amt * sizeof(Material), cpu_materials);
@@ -549,6 +618,9 @@ void writeBufferValues() {
     
     cout << "Created accumbuffer \n";
     
+    queue.finish();
+    writeImages();
+    
 }
 
 void initCLKernel(){
@@ -574,6 +646,9 @@ void initCLKernel(){
     kernel.setArg(10, voidcolor);
     kernel.setArg(11, cl_camera);
     kernel.setArg(12, framenumber);
+    kernel.setArg(13, cl_img_node_min);
+    kernel.setArg(14, cl_img_node_max);
+    kernel.setArg(15, cl_img_node_info);
 
 }
 
