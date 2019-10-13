@@ -45,17 +45,17 @@ struct Split {
     int binId;
 };
 
-struct NodeInfo {
-    int parent;
-    int child1;
-    int child2;
-    int isLeaf;
+struct NodeInfo
+{
+    union {
+        struct { int parent, child1, child2, isLeaf; };
+        int _i[4];
+    };
     
     NodeInfo(int _parent, int _child1, int _child2, int _isLeaf) : parent(_parent), child1(_child1), child2(_child2), isLeaf(_isLeaf) {}
-    
     NodeInfo() : parent(-1), child1(-1), child2(-1), isLeaf(-1) { }
-    
 };
+
 
 struct BVHNode {
     Vec3 box[2];

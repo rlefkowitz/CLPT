@@ -94,8 +94,6 @@ Buffer cl_output;
 Buffer cl_randoms;
 Buffer cl_ibl;
 Buffer cl_spheres;
-Buffer cl_triangles;
-Buffer cl_nodes;
 Buffer cl_node_min;
 Buffer cl_node_max;
 Buffer cl_node_info;
@@ -524,9 +522,74 @@ void createBufferValues() {
     
 }
 
-void writeImages() {
+void writeTriangleBufferImages() {
+    
+    // Important variables for memory management and image creation
+    vector<Buffer> tempBuffs;
     
     ImageFormat imgfmt_vec(CL_RGBA, CL_FLOAT);
+    ImageFormat imgfmt_mtlidx(CL_R, CL_SIGNED_INT32);
+    cl::size_t<3> dst_origin;
+    dst_origin[0] = 0;
+    dst_origin[1] = 0;
+    dst_origin[2] = 0;
+    cl::size_t<3> region;
+    region[0] = triangle_amt;
+    region[1] = 1;
+    region[2] = 1;
+    
+    // Create Image for Triangle v0, v1, and v2 buffers
+    cl_img_trianglev = Image2D(context, CL_MEM_READ_ONLY, imgfmt_vec, triangle_amt, 3);
+    cl_img_trimtlidx = Image1D(context, CL_MEM_READ_ONLY, imgfmt_mtlidx, triangle_amt);
+    
+    // Create Triangle v0 buffer and copy it to the image
+    cout << "Wrote to Triangle Buffers: ";
+    for(int i = 0; i < 3; i++)
+        tempBuffs.push_back(Buffer(context, CL_MEM_READ_ONLY, triangle_amt * sizeof(Vec3)));
+    
+    queue.enqueueWriteBuffer(tempBuffs[0], CL_TRUE, 0, triangle_amt * sizeof(Vec3), cpu_triangle0);
+    queue.enqueueWriteBuffer(tempBuffs[1], CL_TRUE, 0, triangle_amt * sizeof(Vec3), cpu_triangle1);
+    queue.enqueueWriteBuffer(tempBuffs[2], CL_TRUE, 0, triangle_amt * sizeof(Vec3), cpu_triangle2);
+    
+    cout << "Vertices";
+    
+    tempBuffs.push_back(Buffer(context, CL_MEM_READ_ONLY, triangle_amt * sizeof(cl_int)));
+    queue.enqueueWriteBuffer(tempBuffs[3], CL_TRUE, 0, triangle_amt * sizeof(cl_int), cpu_trimtlidx);
+    
+    cout << " and Material Indices.\n";
+    
+    delete cpu_triangle0;
+    delete cpu_triangle1;
+    delete cpu_triangle2;
+    delete cpu_trimtlidx;
+    
+    cout << "Deleted CPU Copies of Triangle Buffers.";
+    
+    cout << "Wrote to Triangle Images: ";
+    for(int i = 0; i < 3; i++) {
+        dst_origin[1] = i;
+        queue.enqueueCopyBufferToImage(tempBuffs[i], cl_img_trianglev, 0, dst_origin, region);
+    }
+    
+    cout << "Vertices";
+    
+    dst_origin[1] = 0;
+    queue.enqueueCopyBufferToImage(tempBuffs[3], cl_img_trimtlidx, 0, dst_origin, region);
+    
+    cout << " and Material Indices.\n";
+    
+    tempBuffs.clear();
+    
+    cout << "Cleared Temporary Buffers.\nTriangle Images Complete!\n\n";
+}
+
+void writeBVHBufferImages() {
+    
+    // Important variables for memory management and image creation
+    vector<Buffer> tempBuffs;
+    
+    ImageFormat imgfmt_vec(CL_RGBA, CL_FLOAT);
+    ImageFormat imgfmt_node_info(CL_RGBA, CL_SIGNED_INT32);
     cl::size_t<3> dst_origin;
     dst_origin[0] = 0;
     dst_origin[1] = 0;
@@ -536,46 +599,49 @@ void writeImages() {
     region[1] = 1;
     region[2] = 1;
     
+    // Create Image for Node Miin buffer
     cl_img_node_min = Image1D(context, CL_MEM_READ_ONLY, imgfmt_vec, bvhnode_amt);
-    queue.enqueueCopyBufferToImage(cl_node_min, cl_img_node_min, 0, dst_origin, region);
-    
-    cout << "Made node min image \n";
-    
     cl_img_node_max = Image1D(context, CL_MEM_READ_ONLY, imgfmt_vec, bvhnode_amt);
-    queue.enqueueCopyBufferToImage(cl_node_max, cl_img_node_max, 0, dst_origin, region);
-    
-    cout << "Made node max image \n";
-    
-    ImageFormat imgfmt_node_info(CL_RGBA, CL_SIGNED_INT32);
-    
     cl_img_node_info = Image1D(context, CL_MEM_READ_ONLY, imgfmt_node_info, bvhnode_amt);
-    queue.enqueueCopyBufferToImage(cl_node_info, cl_img_node_info, 0, dst_origin, region);
     
-    cout << "Made node info image \n";
+    cout << "Wrote to BVH Buffers: ";
+    tempBuffs.push_back(Buffer(context, CL_MEM_READ_ONLY, bvhnode_amt * sizeof(Vec3)));
+    queue.enqueueWriteBuffer(tempBuffs[0], CL_TRUE, 0, bvhnode_amt * sizeof(Vec3), cpu_node_min);
     
-    region[0] = triangle_amt;
+    cout << "Minimums";
     
-    cl_img_trianglev = Image2D(context, CL_MEM_READ_ONLY, imgfmt_vec, triangle_amt, 3);
-    queue.enqueueCopyBufferToImage(cl_triangle0, cl_img_trianglev, 0, dst_origin, region);
+    tempBuffs.push_back(Buffer(context, CL_MEM_READ_ONLY, bvhnode_amt * sizeof(Vec3)));
+    queue.enqueueWriteBuffer(tempBuffs[1], CL_TRUE, 0, bvhnode_amt * sizeof(Vec3), cpu_node_max);
     
-    dst_origin[1] = 1;
+    cout << ", Maximums";
     
-    queue.enqueueCopyBufferToImage(cl_triangle1, cl_img_trianglev, 0, dst_origin, region);
+    tempBuffs.push_back(Buffer(context, CL_MEM_READ_ONLY, bvhnode_amt * sizeof(NodeInfo)));
+    queue.enqueueWriteBuffer(tempBuffs[2], CL_TRUE, 0, bvhnode_amt * sizeof(NodeInfo), cpu_node_info);
     
-    dst_origin[1] = 2;
+    cout << ", and Information.\n";
     
-    queue.enqueueCopyBufferToImage(cl_triangle2, cl_img_trianglev, 0, dst_origin, region);
+    delete cpu_node_min;
+    delete cpu_node_max;
+    delete cpu_node_info;
     
-    dst_origin[1] = 0;
+    cout << "Deleted CPU copies of BVH Buffers.\n";
     
-    cout << "Made triangle vs image \n";
+    cout << "Wrote to BVH Images: ";
+    queue.enqueueCopyBufferToImage(tempBuffs[0], cl_img_node_min, 0, dst_origin, region);
     
-    ImageFormat imgfmt_mtlidx(CL_R, CL_SIGNED_INT32);
+    cout << "Minimums";
     
-    cl_img_trimtlidx = Image1D(context, CL_MEM_READ_ONLY, imgfmt_mtlidx, triangle_amt);
-    queue.enqueueCopyBufferToImage(cl_trimtlidx, cl_img_trimtlidx, 0, dst_origin, region);
+    queue.enqueueCopyBufferToImage(tempBuffs[1], cl_img_node_max, 0, dst_origin, region);
     
-    cout << "Made triangle material index image \n";
+    cout << ", Maximums";
+    
+    queue.enqueueCopyBufferToImage(tempBuffs[2], cl_img_node_info, 0, dst_origin, region);
+    
+    cout << ", and Information.\n";
+    
+    tempBuffs.clear();
+    
+    cout << "Cleared Temporary Buffers.\nBVH Images Complete!\n\n";
 }
 
 void writeBufferValues() {
@@ -604,59 +670,11 @@ void writeBufferValues() {
     
     cout << "Wrote spheres \n";
     
-    // Create triangle buffer on the OpenCL device
-    cl_triangles = Buffer(context, CL_MEM_READ_ONLY, triangle_amt * sizeof(Triangle));
-    queue.enqueueWriteBuffer(cl_triangles, CL_TRUE, 0, triangle_amt * sizeof(Triangle), cpu_triangles);
-    
-    cout << "Wrote triangles \n";
-    
-    // Create triangle buffer on the OpenCL device
-    cl_triangle0 = Buffer(context, CL_MEM_READ_ONLY, triangle_amt * sizeof(Vec3));
-    queue.enqueueWriteBuffer(cl_triangle0, CL_TRUE, 0, triangle_amt * sizeof(Vec3), cpu_triangle0);
-    
-    cout << "Wrote triangle v0s \n";
-    
-    // Create triangle buffer on the OpenCL device
-    cl_triangle1 = Buffer(context, CL_MEM_READ_ONLY, triangle_amt * sizeof(Vec3));
-    queue.enqueueWriteBuffer(cl_triangle1, CL_TRUE, 0, triangle_amt * sizeof(Vec3), cpu_triangle1);
-    
-    cout << "Wrote triangle v1s \n";
-    
-    // Create triangle buffer on the OpenCL device
-    cl_triangle2 = Buffer(context, CL_MEM_READ_ONLY, triangle_amt * sizeof(Vec3));
-    queue.enqueueWriteBuffer(cl_triangle2, CL_TRUE, 0, triangle_amt * sizeof(Vec3), cpu_triangle2);
-    
-    cout << "Wrote triangle v2s \n";
-    
-    // Create triangle buffer on the OpenCL device
-    cl_trimtlidx = Buffer(context, CL_MEM_READ_ONLY, triangle_amt * sizeof(cl_uint));
-    queue.enqueueWriteBuffer(cl_trimtlidx, CL_TRUE, 0, triangle_amt * sizeof(cl_int), cpu_trimtlidx);
-    
-    cout << "Wrote triangle material indexes \n";
+    // Start process of making images
+    writeTriangleBufferImages();
     
     // Create BVH node buffer on the OpenCL device
-    cl_nodes = Buffer(context, CL_MEM_READ_ONLY, bvhnode_amt * sizeof(BVHNode));
-    queue.enqueueWriteBuffer(cl_nodes, CL_TRUE, 0, bvhnode_amt * sizeof(BVHNode), cpu_bvhs);
-    
-    cout << "Wrote BVH \n";
-    
-    // Create BVH node buffer on the OpenCL device
-    cl_node_min = Buffer(context, CL_MEM_READ_ONLY, bvhnode_amt * sizeof(Vec3));
-    queue.enqueueWriteBuffer(cl_node_min, CL_TRUE, 0, bvhnode_amt * sizeof(Vec3), cpu_node_min);
-    
-    cout << "WWrote to BVH Node Min Buffer \n";
-    
-    // Create BVH node buffer on the OpenCL device
-    cl_node_max = Buffer(context, CL_MEM_READ_ONLY, bvhnode_amt * sizeof(Vec3));
-    queue.enqueueWriteBuffer(cl_node_max, CL_TRUE, 0, bvhnode_amt * sizeof(Vec3), cpu_node_max);
-    
-    cout << "Wrote to BVH Node Max Buffer \n";
-    
-    // Create BVH node buffer on the OpenCL device
-    cl_node_info = Buffer(context, CL_MEM_READ_ONLY, bvhnode_amt * sizeof(NodeInfo));
-    queue.enqueueWriteBuffer(cl_node_info, CL_TRUE, 0, bvhnode_amt * sizeof(NodeInfo), cpu_node_info);
-    
-    cout << "Wrote to BVH Node Info Buffer \n";
+    writeBVHBufferImages();
     
     // Create material buffer on the OpenCL device
     cl_materials = Buffer(context, CL_MEM_READ_ONLY, material_amt * sizeof(Material));
@@ -686,9 +704,6 @@ void writeBufferValues() {
     cl_accumbuffer = Buffer(context, CL_MEM_WRITE_ONLY, window_width * window_height * sizeof(cl_float3));
     
     cout << "Created accumbuffer \n";
-    
-    queue.finish();
-    writeImages();
     
 }
 
