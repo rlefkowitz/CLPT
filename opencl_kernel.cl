@@ -180,19 +180,18 @@ bool intersect_sphere(__global Sphere* sphere, const Ray* ray, float3* point, fl
     return true;
 }
 
-bool intersect_triangle(__read_only image2d_t trianglev_img, const int i, const Ray* ray,
+bool intersect_triangle(__read_only image1d_t triangles_img, const int idx, const Ray* ray,
                         float3* point, float3* normal, float* t, const bool cull) {
     
-    float3 v2 = read_imagef(trianglev_img, sampler, (int2)(i, 2)).xyz;
-    float3 v1 = read_imagef(trianglev_img, sampler, (int2)(i, 1)).xyz;
-    float3 v0 = read_imagef(trianglev_img, sampler, (int2)(i, 0)).xyz;
+    float3 v0 = read_imagef(triangles_img, sampler, idx).xyz;
+    float3 v1 = read_imagef(triangles_img, sampler, idx + 1).xyz;
+    float3 v2 = read_imagef(triangles_img, sampler, idx + 2).xyz;
     float3 pvec = cross(ray->dir, v2);
-    float det = dot(v1, pvec);
     
     /* Backface culling */
     /*if(det < eps && false) return false;*/
     
-    float invDet = native_recip(det);
+    float invDet = native_recip(dot(v1, pvec));
     
     float3 tvec = ray->origin - v0;
     float u = dot(tvec, pvec) * invDet;
@@ -267,7 +266,7 @@ float intersect_aabb_dist(const float3 min, const float3 max, const Ray* r, floa
 
 void intersect_bvh(const Ray* ray, float3* point, float3* normal, float* t, int* triangle_id, int* sphere_id,
                    __read_only image1d_t node_min_img, __read_only image1d_t node_max_img,
-                   __read_only image1d_t node_info_img, __read_only image2d_t trianglev_img) {
+                   __read_only image1d_t node_info_img, __read_only image1d_t triangles_img) {
     
     if(!intersect_aabb(read_imagef(node_min_img, sampler, 0).xyz,
                        read_imagef(node_max_img, sampler, 0).xyz,
@@ -353,7 +352,7 @@ void intersect_bvh(const Ray* ray, float3* point, float3* normal, float* t, int*
             
             for (int i = child1; i < child2; i++)  {
                 
-                if(intersect_triangle(trianglev_img, i, ray, point, normal, t, false)) {
+                if(intersect_triangle(triangles_img, 3 * i, ray, point, normal, t, false)) {
                     *triangle_id = i;
                     *sphere_id = -1;
                 }
@@ -369,7 +368,7 @@ bool intersect_scene(__global Sphere* spheres, __constant Material* materials, c
                      float3* point, float3* normal, float* t, Material* m, const unsigned int sphere_count,
                      const unsigned int node_count, const unsigned int material_count, const bool use_ground,
                      __read_only image1d_t node_min_img, __read_only image1d_t node_max_img,
-                     __read_only image1d_t node_info_img, __read_only image2d_t trianglev_img,
+                     __read_only image1d_t node_info_img, __read_only image1d_t triangles_img,
                      __read_only image1d_t trimtlidx_img) {
     
     float ti = *t;
@@ -390,7 +389,7 @@ bool intersect_scene(__global Sphere* spheres, __constant Material* materials, c
     
     if(node_count > 0)
         intersect_bvh(ray, point, normal, t, &triangle_id, &sphere_id, node_min_img,
-                      node_max_img, node_info_img, trianglev_img);
+                      node_max_img, node_info_img, triangles_img);
     
     if(sphere_id != -1) {
         int i = sphere_id;
@@ -666,7 +665,7 @@ float3 trace(__global Sphere* spheres, __constant Material* materials, __constan
              const unsigned int sphere_count, const unsigned int node_count, const unsigned int material_count,
              const unsigned int medium_count, unsigned int *seed, int ibl_width, int ibl_height, __global float3* ibl,
              const float3 void_color, const bool use_IbL, const bool use_ground, __read_only image1d_t node_min_img,
-             __read_only image1d_t node_max_img, __read_only image1d_t node_info_img, __read_only image2d_t trianglev_img,
+             __read_only image1d_t node_max_img, __read_only image1d_t node_info_img, __read_only image1d_t triangles_img,
              __read_only image1d_t trimtlidx_img) {
     
     Ray ray = *camray;
@@ -707,7 +706,7 @@ float3 trace(__global Sphere* spheres, __constant Material* materials, __constan
         
         bool hitThisTime = intersect_scene(spheres, materials, &ray, &point, &normal, &t, &mtl, sphere_count,
                                            node_count, material_count, use_ground, node_min_img, node_max_img,
-                                           node_info_img, trianglev_img, trimtlidx_img);
+                                           node_info_img, triangles_img, trimtlidx_img);
         
         hitSurface = true;
         
@@ -819,7 +818,7 @@ __kernel void render_kernel(__global float3* accumbuffer, __constant unsigned in
                             __global Sphere* spheres, __constant Material* materials, __constant Medium* mediums,
                             const float3 void_color, __constant const Camera* cam, int framenumber,
                             __read_only image1d_t node_min_img, __read_only image1d_t node_max_img,
-                            __read_only image1d_t node_info_img, __read_only image2d_t trianglev_img,
+                            __read_only image1d_t node_info_img, __read_only image1d_t triangles_img,
                             __read_only image1d_t trimtlidx_img) {
     
     const unsigned int width = usefulnums[0];
@@ -850,7 +849,7 @@ __kernel void render_kernel(__global float3* accumbuffer, __constant unsigned in
     float3 currres = trace(spheres, materials, mediums, &camray, sphere_amt, node_amt,
                            material_amt, medium_amt, &seed, ibl_width, ibl_height, ibl,
                            void_color, use_IbL, use_ground, node_min_img, node_max_img,
-                           node_info_img, trianglev_img, trimtlidx_img);
+                           node_info_img, triangles_img, trimtlidx_img);
     
     if(isnan(currres).x == 0)
         result = currres;

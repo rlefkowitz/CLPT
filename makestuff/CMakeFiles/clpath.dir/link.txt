@@ -1,0 +1,2 @@
+/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/ar qc libclpath.a  CMakeFiles/clpath.dir/src/camera.cpp.o CMakeFiles/clpath.dir/src/hdrloader/hdrloader.cpp.o
+/Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin/ranlib libclpath.a

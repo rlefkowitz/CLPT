@@ -36,16 +36,12 @@ Sphere* cpu_spheres;
 int sphere_amt;
 
 // Triangle variables
-Triangle* cpu_triangles;
 int triangle_amt;
 
-Vec3* cpu_triangle0;
-Vec3* cpu_triangle1;
-Vec3* cpu_triangle2;
+Vec3* cpu_triangles;
 cl_int* cpu_trimtlidx;
 
 // BVHNode variables
-BVHNode* cpu_bvhs;
 int bvhnode_amt;
 
 Vec3* cpu_node_min;
@@ -86,7 +82,7 @@ Program program;
 Image1D cl_img_node_min;
 Image1D cl_img_node_max;
 Image1D cl_img_node_info;
-Image2D cl_img_trianglev;
+Image1D cl_img_triangles;
 Image1D cl_img_trimtlidx;
 
 // Device (CPU/GPU) Buffers
@@ -97,9 +93,7 @@ Buffer cl_spheres;
 Buffer cl_node_min;
 Buffer cl_node_max;
 Buffer cl_node_info;
-Buffer cl_triangle0;
-Buffer cl_triangle1;
-Buffer cl_triangle2;
+Buffer cl_triangles;
 Buffer cl_trimtlidx;
 Buffer cl_materials;
 Buffer cl_mediums;
@@ -407,16 +401,12 @@ void buildScene() {
     triangle_amt = triangles.size();
     printf("Triangles: %d\n", triangle_amt);
     
-    cpu_triangles = new Triangle[triangle_amt];
-    cpu_triangle0 = new Vec3[triangle_amt];
-    cpu_triangle1 = new Vec3[triangle_amt];
-    cpu_triangle2 = new Vec3[triangle_amt];
+    cpu_triangles = new Vec3[3 * triangle_amt];
     cpu_trimtlidx = new cl_int[triangle_amt];
     for(int i = 0; i < triangle_amt; i++) {
-        cpu_triangles[i] = triangles[i];
-        cpu_triangle0[i] = triangles[i].v0;
-        cpu_triangle1[i] = triangles[i].v1;
-        cpu_triangle2[i] = triangles[i].v2;
+        cpu_triangles[3 * i] = triangles[i].v0;
+        cpu_triangles[3 * i + 1] = triangles[i].v1;
+        cpu_triangles[3 * i + 2] = triangles[i].v2;
         cpu_trimtlidx[i] = triangles[i].mtlidx;
     }
     triangles.clear();
@@ -425,12 +415,10 @@ void buildScene() {
     bvhnode_amt = nodes.size();
     printf("BVH Nodes: %d\n", bvhnode_amt);
     
-    cpu_bvhs = new BVHNode[bvhnode_amt];
     cpu_node_min = new Vec3[bvhnode_amt];
     cpu_node_max = new Vec3[bvhnode_amt];
     cpu_node_info = new NodeInfo[bvhnode_amt];
     for(int i = 0; i < bvhnode_amt; i++) {
-        cpu_bvhs[i] = nodes[i];
         cpu_node_min[i] = nodes[i].box[0];
         cpu_node_max[i] = nodes[i].box[1];
         cpu_node_info[i] = nodes[i].getInfo();
@@ -534,47 +522,38 @@ void writeTriangleBufferImages() {
     dst_origin[1] = 0;
     dst_origin[2] = 0;
     cl::size_t<3> region;
-    region[0] = triangle_amt;
+    region[0] = 3 * triangle_amt;
     region[1] = 1;
     region[2] = 1;
     
     // Create Image for Triangle v0, v1, and v2 buffers
-    cl_img_trianglev = Image2D(context, CL_MEM_READ_ONLY, imgfmt_vec, triangle_amt, 3);
+    cl_img_triangles = Image1D(context, CL_MEM_READ_ONLY, imgfmt_vec, 3 * triangle_amt);
     cl_img_trimtlidx = Image1D(context, CL_MEM_READ_ONLY, imgfmt_mtlidx, triangle_amt);
     
-    // Create Triangle v0 buffer and copy it to the image
     cout << "Wrote to Triangle Buffers: ";
-    for(int i = 0; i < 3; i++)
-        tempBuffs.push_back(Buffer(context, CL_MEM_READ_ONLY, triangle_amt * sizeof(Vec3)));
-    
-    queue.enqueueWriteBuffer(tempBuffs[0], CL_TRUE, 0, triangle_amt * sizeof(Vec3), cpu_triangle0);
-    queue.enqueueWriteBuffer(tempBuffs[1], CL_TRUE, 0, triangle_amt * sizeof(Vec3), cpu_triangle1);
-    queue.enqueueWriteBuffer(tempBuffs[2], CL_TRUE, 0, triangle_amt * sizeof(Vec3), cpu_triangle2);
+    tempBuffs.push_back(Buffer(context, CL_MEM_READ_ONLY, 3 * triangle_amt * sizeof(Vec3)));
+    queue.enqueueWriteBuffer(tempBuffs[0], CL_TRUE, 0, 3 * triangle_amt * sizeof(Vec3), cpu_triangles);
     
     cout << "Vertices";
     
     tempBuffs.push_back(Buffer(context, CL_MEM_READ_ONLY, triangle_amt * sizeof(cl_int)));
-    queue.enqueueWriteBuffer(tempBuffs[3], CL_TRUE, 0, triangle_amt * sizeof(cl_int), cpu_trimtlidx);
+    queue.enqueueWriteBuffer(tempBuffs[1], CL_TRUE, 0, triangle_amt * sizeof(cl_int), cpu_trimtlidx);
     
     cout << " and Material Indices.\n";
     
-    delete cpu_triangle0;
-    delete cpu_triangle1;
-    delete cpu_triangle2;
+    delete cpu_triangles;
     delete cpu_trimtlidx;
     
-    cout << "Deleted CPU Copies of Triangle Buffers.";
+    cout << "Deleted CPU Copies of Triangle Buffers.\n";
     
     cout << "Wrote to Triangle Images: ";
-    for(int i = 0; i < 3; i++) {
-        dst_origin[1] = i;
-        queue.enqueueCopyBufferToImage(tempBuffs[i], cl_img_trianglev, 0, dst_origin, region);
-    }
+    
+    queue.enqueueCopyBufferToImage(tempBuffs[0], cl_img_triangles, 0, dst_origin, region);
     
     cout << "Vertices";
     
-    dst_origin[1] = 0;
-    queue.enqueueCopyBufferToImage(tempBuffs[3], cl_img_trimtlidx, 0, dst_origin, region);
+    region[0] = triangle_amt;
+    queue.enqueueCopyBufferToImage(tempBuffs[1], cl_img_trimtlidx, 0, dst_origin, region);
     
     cout << " and Material Indices.\n";
     
@@ -731,7 +710,7 @@ void initCLKernel(){
     kernel.setArg(11, cl_img_node_min);
     kernel.setArg(12, cl_img_node_max);
     kernel.setArg(13, cl_img_node_info);
-    kernel.setArg(14, cl_img_trianglev);
+    kernel.setArg(14, cl_img_triangles);
     kernel.setArg(15, cl_img_trimtlidx);
 
 }
