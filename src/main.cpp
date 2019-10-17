@@ -678,8 +678,8 @@ void render() {
 //    queue.enqueueWriteBuffer(cl_spheres, CL_TRUE, 0, sphere_amt * sizeof(Sphere), cpu_spheres);
 //    queue.enqueueWriteBuffer(cl_triangles, CL_TRUE, 0, triangle_amt * sizeof(Triangle), cpu_triangles);
 //    queue.enqueueWriteBuffer(cl_nodes, CL_TRUE, 0, bvhnode_amt * sizeof(BVHNode), cpu_bvhs);
-    queue.enqueueWriteBuffer(cl_materials, CL_FALSE, 0, material_amt * sizeof(Material), cpu_materials);
-    queue.enqueueWriteBuffer(cl_mediums, CL_FALSE, 0, medium_amt * sizeof(Medium), cpu_mediums);
+//    queue.enqueueWriteBuffer(cl_materials, CL_FALSE, 0, material_amt * sizeof(Material), cpu_materials);
+//    queue.enqueueWriteBuffer(cl_mediums, CL_FALSE, 0, medium_amt * sizeof(Medium), cpu_mediums);
     
     
 //    for(int i = 0; i < window_width * window_height; i++) {

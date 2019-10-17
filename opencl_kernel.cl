@@ -10,6 +10,11 @@ __constant const float sba = 0.951056516295153572f;
 __constant const float3 ZENITH_DIR = (float3)(1000.0f, 500.0f, -500.0f);
 __constant const float3 NORMALIZED_ZENITH_DIR = (float3)(0.81649658f, 0.40824829f, -0.40824829f);
 
+typedef struct RayLw {
+    float3 origin;
+    float3 dir;
+} RayLw;
+
 typedef struct Ray {
     float3 origin;
     float3 dir;
@@ -128,6 +133,35 @@ Ray createCamRay(const int x_coord, const int y_coord, const int width, const in
         Ray ray;
         ray.origin = cam->pos;
         ray.dir = normalize(raydir);
+        return ray;
+    }
+}
+
+RayLw createCamRayLw(const int x_coord, const int y_coord, const int width, const int height, const bool use_DOF,
+                 unsigned int *seed, __constant const Camera* cam) {
+    
+    float offx = rand(seed);
+    float offy = rand(seed);
+    
+    float ih = native_recip((float) height);
+    
+    float har = native_divide((float) width, (float) (height << 1));
+    float x0 = ih * (x_coord + offx - 0.5f) - har;
+    float y0 = 0.5f - ih * (y_coord + offy - 0.5f);
+    
+    const float3 fd = cam->fd;
+    const float3 up = cam->up;
+    const float3 rt = cross(up, fd);
+    const float3 raydir = x0*rt + y0*up + fd;
+    
+    if(use_DOF) {
+        float2 pt = cam->aperture_radius*samplePoly(seed);
+        float3 aptOffset = up*pt.y + rt*pt.x;
+        float3 dn = normalize(raydir*cam->focal_distance - aptOffset);
+        RayLw ray = {cam->pos + aptOffset, dn};
+        return ray;
+    } else {
+        RayLw ray = {cam->pos, normalize(raydir)};
         return ray;
     }
 }
@@ -790,11 +824,11 @@ float3 trace(__global Sphere* spheres, __global Triangle* triangles, __global BV
 }
 
 int pix_coord(const unsigned int width, const unsigned int height, int i) {
-    int bigcol = i / (8 * height);
-    int col = 8 * bigcol + i % 8;
-    int rowcomp = i - (8 * bigcol * height);
-    int row = rowcomp / 8;
-    return (row * width + col);
+    int bigcol = (i >> 3) / height;
+    int col = (bigcol << 3) + (i & 0x7);
+    int rowcomp = i - (bigcol * height << 3);
+    rowcomp >>= 3;
+    return (rowcomp * width + col);
 }
 
 union Color{ float c; uchar4 components; };
@@ -822,11 +856,8 @@ __kernel void render_kernel(__global float3* accumbuffer, __constant unsigned in
     const int wii = get_global_id(0);
     const int work_item_id = pix_coord(width, height, wii);
     unsigned int seed = randoms[work_item_id];
-    unsigned int x_coord = work_item_id % width;    /* x-coordinate of the pixel */
     unsigned int y_coord = work_item_id / width;    /* y-coordinate of the pixel */
-    
-    float3 result = (float3)(0.0f, 0.0f, 0.0f);
-    int spp = framenumber + 1;
+    unsigned int x_coord = work_item_id - width * y_coord;    /* x-coordinate of the pixel */
     
     Ray camray = createCamRay(x_coord, height - y_coord, width, height, use_DOF, &seed, cam);
     
@@ -834,16 +865,44 @@ __kernel void render_kernel(__global float3* accumbuffer, __constant unsigned in
                            &camray, sphere_amt, triangle_amt, node_amt,
                            material_amt, medium_amt, &seed, ibl_width, ibl_height,
                            ibl, void_color, use_IbL, use_ground);
-    
-    if(isnan(currres).x == 0)
-        result = currres;
-    
-    accumbuffer[work_item_id] += result;
+
+    accumbuffer[work_item_id] += currres;
     randoms[work_item_id] = seed;
-    float3 res = tonemapFilmic(native_divide(accumbuffer[work_item_id], spp));
+    float3 res = tonemapFilmic(native_divide(accumbuffer[work_item_id], framenumber + 1));
     
     union Color fcolor;
-    fcolor.components = (uchar4)(convert_uchar3(clamp(res, 0.0f, 1.0f) * 255), 1);
+    fcolor.components = (uchar4)(convert_uchar3(res * 255), 1);
     
     output[work_item_id] = (float3)(x_coord, y_coord, fcolor.c);
+    /*const unsigned int width = usefulnums[0];
+    const unsigned int height = usefulnums[1];
+    const unsigned int samples = usefulnums[9];
+    const unsigned int bools = usefulnums[10];
+    const int work_item_id = pix_coord(width, height, get_global_id(0));
+    unsigned int seed = randoms[work_item_id];
+    unsigned int y_coord = work_item_id / width;
+    unsigned int x_coord = work_item_id - width * y_coord;
+    
+    Ray camray = createCamRay(x_coord, height - y_coord, width, usefulnums[1], bools & 1, &seed, cam);
+
+    accumbuffer[work_item_id] += trace(spheres, triangles, nodes, materials, mediums,
+                                       &camray, usefulnums[4], usefulnums[5], usefulnums[6],
+                                       usefulnums[7], usefulnums[8], &seed, usefulnums[2], usefulnums[3],
+                                       ibl, void_color, bools & 2, bools & 4);*/
+}
+
+
+__kernel void camera_ray_kernel(__global RayLw* camera_rays, __global unsigned int* randoms,
+                                __constant const Camera* cam, int width, int height, const uchar bools) {
+    
+    const int work_item_id = get_global_id(0);
+    unsigned int seed = randoms[work_item_id];
+    
+    unsigned int y_coord = work_item_id / width;    /* y-coordinate of the pixel */
+    unsigned int x_coord = work_item_id - width * y_coord;    /* x-coordinate of the pixel */
+    
+    camera_rays[work_item_id] = createCamRayLw(x_coord, height - y_coord, width, height,
+                                               bools & 1, &seed, cam);
+    
+    randoms[work_item_id] = seed;
 }

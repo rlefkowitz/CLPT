@@ -6,6 +6,7 @@
 #include <OpenGL/gl.h>
 #include <OpenGL/glext.h>
 #define GL_SHARING_EXTENSION "cl_APPLE_gl_sharing"
+#define GL_SHARING_EXTENSION "cl_khr_gl_sharing"
 #include "cl.hpp"
 #include "user_interaction.h"
 #include <time.h>
