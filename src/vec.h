@@ -9,8 +9,9 @@ struct Vec3
 		float _v[4];
 	};
 
-	Vec3(float _x = 0, float _y = 0, float _z = 0) : x(_x), y(_y), z(_z) {}
-	Vec3(const Vec3& v) : x(v.x), y(v.y), z(v.z) {}
+	Vec3(float _x = 0, float _y = 0, float _z = 0, float _w = 0) : x(_x), y(_y), z(_z), w(_w) {}
+    Vec3(const Vec3& v, float _w) : x(v.x), y(v.y), z(v.z), w(_w) {}
+    Vec3(const Vec3& v) : x(v.x), y(v.y), z(v.z), w(v.w) {}
 	inline float lengthsq(){ return x*x + y*y + z*z; }
 	inline void normalize(){ float norm = sqrtf(x*x + y*y + z*z); x /= norm; y /= norm; z /= norm; }
 	inline Vec3& operator+=(const Vec3& v){ x += v.x; y += v.y; z += v.z; return *this; }

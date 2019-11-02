@@ -594,40 +594,9 @@ void runKernel(){
     queue.enqueueAcquireGLObjects(&cl_vbos);
     queue.finish();
     
-    
-    if(profiling) {
-        // Create Event object for profiling
-        Event start, stop;
-        
-        queue.enqueueMarkerWithWaitList({ }, &start);
-        // Launch the kernel
-        queue.enqueueNDRangeKernel(kernel, NULL, global_work_size, local_work_size);
-        queue.enqueueMarkerWithWaitList({ }, &stop);
-        
-        stop.wait();
-
-        cl_ulong time_start, time_end;
-        double total_time;
-        start.getProfilingInfo(CL_PROFILING_COMMAND_END, &time_start);
-        stop.getProfilingInfo(CL_PROFILING_COMMAND_START, &time_end);
-        total_time = time_end - time_start;
-        cout << "Execution time in milliseconds " << total_time / (float)10e6 << ".\n";
-//        // Retrieve and print profiling info
-//        uint64_t param;
-//        evt.getProfilingInfo(CL_PROFILING_COMMAND_QUEUED, &param);
-//        printf("%u: %llu", 0, param);
-//        evt.getProfilingInfo(CL_PROFILING_COMMAND_SUBMIT, &param);
-//        printf(" %llu", param);
-//        evt.getProfilingInfo(CL_PROFILING_COMMAND_START, &param);
-//        printf(" %llu", param);
-//        evt.getProfilingInfo(CL_PROFILING_COMMAND_END, &param);
-//        printf(" %llu\n", param);
-        queue.finish();
-    } else {
-        // Launch the kernel
-        queue.enqueueNDRangeKernel(kernel, NULL, global_work_size, local_work_size);
-        queue.finish();
-    }
+    // Launch the kernel
+    queue.enqueueNDRangeKernel(kernel, NULL, global_work_size, local_work_size);
+    queue.finish();
     
     //Release the VBOs so OpenGL can play with them
     queue.enqueueReleaseGLObjects(&cl_vbos);

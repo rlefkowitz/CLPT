@@ -52,7 +52,7 @@ void initGL(int argc, char** argv){
 	// initialise OpenGL
 	glClearColor(0.0, 0.0, 0.0, 1.0);
 	glMatrixMode(GL_PROJECTION);
-	gluOrtho2D(0.0, window_width - 1, 0.0, window_height);
+	gluOrtho2D(0.0, window_width, 0.0, window_height);
 }
 
 void createVBO(GLuint* vbo)

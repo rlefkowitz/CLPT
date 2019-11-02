@@ -47,10 +47,7 @@ struct Split {
 
 struct BVHNode {
     Vec3 box[2];
-    int parent;
-    int child1;
-    int child2;
-    int isLeaf;
+    int parent, child1, child2, isLeaf;
     
     inline Vec3 span() const { return (box[1] - box[0]); }
     

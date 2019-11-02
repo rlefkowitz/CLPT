@@ -183,8 +183,12 @@ bool loadScene(Scene &scn, string path) {
                 float roughness = extractFloat(info, floatvars);
                 float ior = extractFloat(info, floatvars);
                 mtl = Material(kd, roughness, ior, 2);
+            } else if(matType == "metal") {
+                Vec3 k = extractVec3(info, vecvars, floatvars);
+                float roughness = extractFloat(info, floatvars);
+                mtl = Material(kd, k, roughness, 3);
             } else if(matType == "mirror") {
-                mtl = Material(kd, 0.0f, 3);
+                mtl = Material(kd, 0.0f, 4);
             }
             if(info.size() > 0) {
                 if(info[0] == "medium") {
@@ -192,7 +196,8 @@ bool loadScene(Scene &scn, string path) {
                 }
                 medIdx = extractInt(info, intvars);
             }
-            mtl.ke = ke;
+            if(matType != "metal")
+                mtl.ke = ke;
             mtl.medIdx = medIdx;
             
             int idx = materials.size();
@@ -210,6 +215,7 @@ bool loadScene(Scene &scn, string path) {
                 float f0 = extractFloat(info, floatvars);
                 float f1 = extractFloat(info, floatvars);
                 float f2 = extractFloat(info, floatvars);
+                med = Medium(f0, f1, f2);
             } else {
                 Vec3 v = extractVec3(info, vecvars, floatvars);
                 float f0 = extractFloat(info, floatvars);
@@ -220,7 +226,6 @@ bool loadScene(Scene &scn, string path) {
                     med = Medium(v, f0);
                 }
             }
-            
             int idx = mediums.size();
             mediums.push_back(med);
             intvars.emplace(varName, idx);
@@ -229,8 +234,6 @@ bool loadScene(Scene &scn, string path) {
             Vec3 pos = extractVec3(info, vecvars, floatvars);
             int mtlIdx = extractInt(info, intvars);
             Sphere sphereToAdd(radius, pos, mtlIdx);
-//            cout << "Created sphere with radius " << radius << ", position (" << pos.x << ", " << pos.y << ", " << pos.z << "), and material " << info[0] << "." << endl;
-            
             spheres.push_back(sphereToAdd);
         } else if(first == "mesh") {
             string model = info[0];

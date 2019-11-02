@@ -15,7 +15,7 @@ struct Medium {
     
     Medium(float absCoefficient, float scatterCoefficient) : absCoefficient(Vec3(absCoefficient, absCoefficient, absCoefficient)), scatterCoefficient(scatterCoefficient) {}
     
-    Medium(Vec3 absCoefficient, float scatterCoefficient) : absCoefficient(absCoefficient), scatterCoefficient(scatterCoefficient) {}
+    Medium(Vec3 absCoefficient, float scatterCoefficient) : absCoefficient(absCoefficient),  scatterCoefficient(scatterCoefficient) {}
     
     Medium() : absCoefficient(Vec3()), scatterCoefficient(1e20f) {}
     
@@ -40,6 +40,8 @@ struct Material
     Material(Vec3 kd_, float rough_, float ior_, int type_, int medIdx_ = -1) : kd(kd_), ke(Vec3(0.0f, 0.0f, 0.0f)), roughness(rough_), ior(ior_), tex0(-1), tex1(-1), type(type_), medIdx(medIdx_) {}
     
     Material(Vec3 kd_, float rough_, int type_) : kd(kd_), ke(Vec3(0.0f, 0.0f, 0.0f)), roughness(rough_), ior(1.0f), tex0(-1), tex1(-1), type(type_), medIdx(-1) {}
+    
+    Material(Vec3 kd_, Vec3 ke_, float rough_, int type_) : kd(kd_), ke(ke_), roughness(rough_), ior(1.0f), tex0(-1), tex1(-1), type(type_), medIdx(-1) {}
     
     Material(Vec3 kd_, Vec3 ke_) : kd(kd_), ke(ke_), roughness(0.0f), ior(1.0f), tex0(-1), tex1(-1), type(0), medIdx(-1) {}
     

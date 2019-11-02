@@ -7,14 +7,17 @@ using namespace std;
 
 struct Sphere
 {
-    Vec3 pos;
-    float radius;
+    Vec3 pr;
     int mtlidx;
-    int dummy[2];
+    int dummy[3];
     
-    Sphere(float r, Vec3 p, int mi) : radius(r), pos(p), mtlidx(mi) {}
+    Sphere(float r, Vec3 p, int mi) : mtlidx(mi) {
+        pr = Vec3(p, r);
+    }
     
-    Sphere() : radius(1.0f), pos(Vec3(0.0f, 0.0f, 0.0f)), mtlidx(0) {}
+    Sphere() : pr(Vec3(0.0f, 0.0f, 0.0f)), mtlidx(0) {
+        pr.w = 1.0f;
+    }
     
 };
 
