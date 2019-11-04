@@ -287,8 +287,7 @@ float intersect_aabb_dist(__global BVHNode* b, const Ray* r, float* t) {
 }
 
 void intersect_bvh(__global Triangle* triangles, __global BVHNode* nodes, const Ray* ray, float3* point,
-                   float3* normal, float* t, const unsigned int triangle_count, const unsigned int node_count,
-                   int* triangle_id, int* sphere_id) {
+                   float3* normal, float* t, int* triangle_id, int* sphere_id) {
 
     if(!intersect_aabb(&nodes[0], ray, t))
         return;
@@ -380,10 +379,10 @@ void intersect_bvh(__global Triangle* triangles, __global BVHNode* nodes, const 
     }
 }
 
-bool intersect_scene(__global Sphere* spheres, __global Triangle* triangles, __global BVHNode* nodes,
-                     __constant Material* materials, const Ray* ray, float3* point, float3* normal, float* t,
-                     Material* m, const unsigned int sphere_count, const unsigned int triangle_count,
-                     const unsigned int node_count, const unsigned int material_count, const bool use_ground) {
+bool intersect_scene(__global Sphere* spheres, __global Triangle* triangles, __global BVHNode* nodes, 
+                     const Ray* ray, float3* point, float3* normal, float* t, int* midx, 
+                     const unsigned int sphere_count, const unsigned int node_count, 
+                     const bool use_ground) {
 
     float ti = *t;
 
@@ -402,18 +401,18 @@ bool intersect_scene(__global Sphere* spheres, __global Triangle* triangles, __g
     int triangle_id = -1;
 
     if(node_count > 0)
-        intersect_bvh(triangles, nodes, ray, point, normal, t, triangle_count, node_count, &triangle_id, &sphere_id);
+        intersect_bvh(triangles, nodes, ray, point, normal, t, &triangle_id, &sphere_id);
 
     if(sphere_id != -1) {
         int i = sphere_id;
         *point = ray->origin + (*t)*ray->dir;
         *normal = native_divide(*point - spheres[i].pr.xyz, spheres[i].pr.w);
-        *m = materials[spheres[i].mtlidx];
+        *midx = spheres[i].mtlidx;
     } else if(triangle_id != -1) {
         int i = triangle_id;
         *normal = normalize(cross(*point, *normal));
         *point = ray->origin + (*t)*ray->dir;
-        *m = materials[triangles[i].mtlidx];
+        *midx = triangles[i].mtlidx;
     }
 
     return *t < ti;
@@ -743,6 +742,7 @@ float3 trace(__global Sphere* spheres, __global Triangle* triangles, __global BV
     float t;
     float brdf;
     float pdf;
+    int mtlidx;
     Material mtl;
     float3 wr;
     bool transmitted;
@@ -754,7 +754,7 @@ float3 trace(__global Sphere* spheres, __global Triangle* triangles, __global BV
 
     for(int n = 0; n < 1500; n++) {
 
-        mtl = ground;
+        mtlidx = -1;
         brdf = 1.0f;
         pdf = 1.0f;
 
@@ -769,8 +769,11 @@ float3 trace(__global Sphere* spheres, __global Triangle* triangles, __global BV
             t = maxDist;
         }
 
-        bool hitThisTime = intersect_scene(spheres, triangles, nodes, materials, &ray, &point, &normal, &t, &mtl,
-                                           sphere_count, triangle_count, node_count, material_count, use_ground);
+        bool hitThisTime = intersect_scene(spheres, triangles, nodes, &ray, &point, &normal, &t, &mtlidx,
+                                           sphere_count, node_count, use_ground);
+
+
+        mtl = mtlidx < 0 ? ground : materials[mtlidx];
 
         hitSurface = true;
 
@@ -938,8 +941,9 @@ __kernel void render_kernel(__global float3* accumbuffer, __constant unsigned in
 }
 
 
-__kernel void camera_ray_kernel(__global RayLw* camera_rays, __global unsigned int* randoms,
-                                __constant const Camera* cam, int width, int height, const uchar bools) {
+__kernel void init_kernel(__global Ray* camera_rays, __global float3* throughputs,
+                          __global unsigned int* randoms, __constant const Camera* cam, int width, 
+                          int height, const uchar bools) {
 
     const int work_item_id = get_global_id(0);
     unsigned int seed = randoms[work_item_id];
@@ -947,8 +951,151 @@ __kernel void camera_ray_kernel(__global RayLw* camera_rays, __global unsigned i
     unsigned int y_coord = work_item_id / width;    /* y-coordinate of the pixel */
     unsigned int x_coord = work_item_id - width * y_coord;    /* x-coordinate of the pixel */
 
-    camera_rays[work_item_id] = createCamRayLw(x_coord, height - y_coord, width, height,
-                                               bools & 1, &seed, cam);
+    camera_rays[work_item_id] = createCamRay(x_coord, height - y_coord, width, height,
+                                            bools & 1, &seed, cam);
+
+    throughputs[work_item_id] = (float3)(1.0f, 1.0f, 1.0f);
 
     randoms[work_item_id] = seed;
+}
+
+
+__kernel void reassign_kernel(__global int* actual_id, __global unsigned char* finished) {
+    
+    const int work_item_id = get_global_id(0);
+
+    int untilusage = work_item_id;
+
+    int i = 0;
+
+    while(finished[++i] != 0 || --untilusage != 0);
+
+    actual_id[work_item_id] = i;
+
+}
+
+
+__kernel void intersection_kernel(__global unsigned char* finished, __global float3* points, __global float3* normals, 
+                                  __global int* materials, __global Ray* rays, __global Sphere* spheres, 
+                                  __global Triangle* triangles, __global BVHNode* nodes, __global int* actual_id, 
+                                  const int sphere_amt, const int node_amt, const uchar bools) {
+
+    const int work_item_id = actual_id[get_global_id(0)];
+    
+    Ray ray = rays[work_item_id];
+
+    float t = 1e16f;
+
+    int mtlidx = -1;
+    float3 normal;
+    float3 point;
+
+    bool hit = intersect_scene(spheres, triangles, nodes, &ray, &point, &normal, &t, &mtlidx,
+                               sphere_amt, node_amt, bools & 4);
+
+    finished[work_item_id] = !hit;
+    if(hit) {
+        materials[work_item_id] = mtlidx;
+        points[work_item_id] = point;
+        normals[work_item_id] = normal;
+    }
+
+}
+
+
+/*
+ Shading Kernel:
+  - Needs: hit, point, normal, material index, seed, current iteration
+  - Gives/Sets: finished, accumbuffer, throughput
+ */
+
+__kernel void shading_kernel(__global Ray* rays, __global unsigned char* finished, __global float3* accumbuffer, 
+                             __global float3* throughputs, __global int* mtlidxs, __global float3* points, 
+                             __global float3* normals, __constant Material* materials, __global float3* ibl, 
+                             __global int* actual_id, __global unsigned int* randoms, const int ibl_width, 
+                             const int ibl_height, const float3 void_color, const uchar bools, 
+                             const unsigned int current_iteration) {
+
+    const int work_item_id = actual_id[get_global_id(0)];
+    unsigned int seed = randoms[work_item_id];
+
+    Ray ray = rays[work_item_id];
+
+    float3 throughput = throughputs[work_item_id];
+
+    if(finished[work_item_id] == 0) {
+
+        int mtlidx = mtlidxs[work_item_id];
+        float3 point = points[work_item_id];
+        float3 normal = normals[work_item_id];
+        float brdf = 1.0f;
+        float3 wr;
+
+        Material mtl = mtlidx < 0 ? ground : materials[mtlidx];
+
+        if(current_iteration > 3) {
+            float p = max(throughput.x, max(throughput.y, throughput.z));
+            if(rand(seed) > p) {
+                finished[work_item_id] = true;
+                return;
+            }
+
+            throughput *= native_recip(p);
+        }
+
+        float3 kd = mtl.kd;
+        float3 ke = mtl.ke;
+
+        int thold;
+
+        bsdf(seed, normal, -1.0f * ray.dir, &wr, &kd, &ke, mtl, &brdf, &thold);
+
+        accumbuffer[work_item_id] += throughput * ke;
+
+        ray.origin = point;
+        ray.dir = wr;
+        throughput *= kd * brdf;
+    } else {
+        if(bools & 2) {
+            /* image-based lighting */
+            float3 env_map_pos = (float3)(0.0f, 15.0f, 0.0f);
+            float3 eye = ray.origin - env_map_pos;
+            float b = dot(eye, ray.dir);
+            const float c = dot(eye, eye) - 1e16f;
+            float d = b*b - c;
+
+            const float3 smp = eye + ray.dir * (native_sqrt(d) - b);
+            const float v = acospi(smp.y*1e-8f);
+            const float u0 = 0.5f*atan2pi(smp.x, smp.z) + 1.0f;
+            const float u = (u > 1.0f) ? u0 - 1.0f : u0;
+            const float3 ibl_sample = sampleImage(u, v, ibl_width, ibl_height, ibl);
+            accumbuffer[work_item_id] += throughput * void_color * ibl_sample;
+        } else {
+            accumbuffer[work_item_id] += throughput * void_color;
+        }
+        return;
+    }
+
+    throughputs[work_item_id] = throughput;
+
+    rays[work_item_id] = ray;
+
+    randoms[work_item_id] = seed;
+}
+
+
+__kernel void final_kernel(__global float3* output, __global float3* accumbuffer, int width, int height, 
+                           const int framenumber) {
+
+    const int work_item_id = get_global_id(0);
+
+    unsigned int y_coord = work_item_id / width;    /* y-coordinate of the pixel */
+    unsigned int x_coord = work_item_id - width * y_coord;    /* x-coordinate of the pixel */
+
+    float3 res = tonemapFilmic(native_divide(accumbuffer[work_item_id], framenumber + 1));
+
+    union Color fcolor;
+    fcolor.components = (uchar4)(convert_uchar3(res * 255), 1);
+
+    output[work_item_id] = (float3)(x_coord, y_coord, fcolor.c);
 }

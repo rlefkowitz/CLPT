@@ -28,8 +28,6 @@ cl_float4* cpu_ibl;
 // Background color
 cl_float3 voidcolor;
 
-//cl_float4* cpu_accumbuffer;
-
 // Sphere variables
 Sphere* cpu_spheres;
 int sphere_amt;
@@ -54,6 +52,9 @@ int medium_amt;
 string scn_path;
 Scene scn;
 
+// store booleans
+unsigned char bools;
+
 // Random generator
 default_random_engine generator;
 uniform_int_distribution<int> distribution(1, (1 << 31) - 2);
@@ -69,21 +70,32 @@ cl_uint* cpu_usefulnums;
 Device device;
 CommandQueue queue;
 Kernel kernel;
+Kernel init_kernel;
+Kernel reassign_kernel;
+Kernel intersection_kernel;
+Kernel shading_kernel;
+Kernel final_kernel;
 Context context;
 Program program;
 
 // Device (CPU/GPU) Buffers
-Buffer cl_output;
+Buffer cl_usefulnums;
+Buffer cl_mediums;
+Buffer cl_rays;
 Buffer cl_randoms;
-Buffer cl_ibl;
+Buffer cl_camera;
+Buffer cl_actualIDs;
+Buffer cl_finished;
+Buffer cl_points;
+Buffer cl_normals;
+Buffer cl_mtlidxs;
 Buffer cl_spheres;
 Buffer cl_triangles;
 Buffer cl_nodes;
-Buffer cl_materials;
-Buffer cl_mediums;
-Buffer cl_camera;
-Buffer cl_usefulnums;
 Buffer cl_accumbuffer;
+Buffer cl_throughputs;
+Buffer cl_materials;
+Buffer cl_ibl;
 BufferGL cl_vbo;
 vector<Memory> cl_vbos;
 
@@ -214,29 +226,7 @@ void initOpenCL()
     cl_int result = program.build({ device }); // "-cl-fast-relaxed-math"
     if (result) cout << "Error during compilation OpenCL code!!!\n (" << result << ")" << endl;
     if (result == CL_BUILD_PROGRAM_FAILURE) printErrorLog(program, device);
-//    program = Program(context, kernel_source);
-//    cl_int result = program.build({ device });
-//    if (result == CL_BUILD_PROGRAM_FAILURE) {
-//        // Check the build status
-//        cl_build_status status = program.getBuildInfo<CL_PROGRAM_BUILD_STATUS>(device);
-//        if (status == CL_BUILD_ERROR) {
-//            // Get the build log
-//            string name = device.getInfo<CL_DEVICE_NAME>();
-//            string buildlog = program.getBuildInfo<CL_PROGRAM_BUILD_LOG>(device);
-//            cerr << "Build log for " << name << ":" << endl
-//            << buildlog << endl;
-//        }
-//
-//    }
-    //          if (result) cout << "Error during compilation OpenCL code!!!\n (" << result << ")" << endl;
-    //    if (result == CL_BUILD_PROGRAM_FAILURE) {
-    //        // Determine the size of the log
-    //        char resultant[16384];
-    //        program.getBuildInfo(device, CL_PROGRAM_BUILD_LOG, resultant);
-    //        printf("%s\n", resultant);
     
-    // Create a kernel (entry point in the OpenCL source program)
-//    kernel = Kernel(program, "render_kernel");
 }
 
 void buildScene() {
@@ -252,117 +242,6 @@ void buildScene() {
     vector<Triangle> triangles = scn.triangles;
     vector<BVHNode> nodes = scn.nodes;
 
-////    int sphere0Mat = materials.size();
-////    materials.push_back(Material(Vec3(0.9f, 0.3f, 0.3f)));//, Vec3(4.0f, 4.0f, 4.0f)));
-////    Sphere sphere0(2.0f, Vec3(-9.0f, 2.00001f, 5.0f), sphere0Mat);
-////    spheres.push_back(sphere0);
-//
-////    int sphere1Mat = materials.size();
-////    materials.push_back(Material(Vec3(0.3f, 0.9f, 0.3f), 0.103f, 1.495f, 2));
-////    Sphere sphere1(2.0f, Vec3(-3.0f, 2.00001f, 5.0f), sphere1Mat);
-////    spheres.push_back(sphere1);
-////    mats[1].kd = Vec3(0.3f, 0.9f, 0.3f);
-////    mats[1].ke = Vec3(0.0f, 0.0f, 0.0f);
-////    mats[1].roughness = 0.356f;
-////    mats[1].tex0 = -1;
-////    mats[1].tex1 = -1;
-////    mats[1].type = 0;
-////
-////    cpu_spheres[1].radius = 2.0f;
-////    cpu_spheres[1].pos = Vec3(-3.0f, 2.00001f, 5.0f);
-////    cpu_spheres[1].mtl = mats[1];
-////
-////    mats[2].kd = Vec3(0.3f, 0.3f, 0.9f);
-////    mats[2].ke = Vec3(0.0f, 0.0f, 0.0f);
-////    mats[2].tex0 = -1;
-////    mats[2].tex1 = -1;
-////    mats[2].type = 0;
-////
-////    cpu_spheres[2].radius = 2.0f;
-////    cpu_spheres[2].pos = Vec3(3.0f, 2.00001f, 5.0f);
-////    cpu_spheres[2].mtl = mats[2];
-////    int sphere2Mat = materials.size();
-////    materials.push_back(Material(Vec3(0.612f, 0.851f, 0.694f), 0.05f, 1));
-////    Sphere sphere2(2.0f, Vec3(3.0f, 2.00001f, 5.0f), sphere2Mat);
-////    spheres.push_back(sphere2);
-////    cpu_spheres[1].radius = 2.0f;
-////    cpu_spheres[1].pos = Vec3(3.0f, 2.00001f, 5.0f);
-////    cpu_spheres[1].mtl = 1;
-////
-////    mats[2].kd = Vec3(0.3f, 0.3f, 0.9f);
-////    mats[2].ke = Vec3(0.0f, 0.0f, 0.0f);
-////    mats[2].roughness = 0.025f;//0.320936131f;
-////    mats[2].ior = 1.3333333f;
-////    mats[2].tex0 = -1;
-////    mats[2].tex1 = -1;
-////    mats[2].type = 2;
-////
-////    cpu_spheres[2].radius = 2.0f;
-////    cpu_spheres[2].pos = Vec3(-3.0f, 2.00001f, 5.0f);
-////    cpu_spheres[2].mtl = mats[2];
-//
-//    // (1 << 1) | 0000 = 0010
-//    // 0010 | 0000 = 0010
-//    // (0010 & 0010) >> 1
-//
-////    Material dragonMat;
-////    dragonMat.kd = Vec3(0.7f, 0.3f, 0.3f);
-////    dragonMat.ke = Vec3(0.0f, 0.0f, 0.0f);
-////    dragonMat.roughness = 0.103f;//0.320936131f;
-////    dragonMat.ior = 1.495f;
-////    dragonMat.tex0 = -1;
-////    dragonMat.tex1 = -1;
-////    dragonMat.type = 2;
-//
-////    Material deerMat;
-////    deerMat.kd = Vec3(0.3f, 0.3f, 0.9f);//Vec3(0.35f, 0.32f, 0.3f);
-////    deerMat.ke = Vec3(0.0f, 0.0f, 0.0f);
-////    deerMat.roughness = 0.00125f;//0.320936131f;
-////    deerMat.ior = 1.3333333f;
-////    deerMat.tex0 = -1;
-////    deerMat.tex1 = -1;
-////    deerMat.type = 2;
-//
-//    int skinMedium = mediums.size();
-//    mediums.push_back(Medium(Vec3(1.0f, 0.4f, 0.4f), 0.3f, 0.1f));
-//
-//    int skinMat = materials.size();
-//    materials.push_back(Material(Vec3(248.0f / 255.0f, 170.0f / 255.0f, 144.0f / 255.0f), 0.362f, 1.2, 2, skinMedium));
-//
-////    printf("%d\n", materials[skinMat].medIdx);
-//
-////    spheres.push_back(Sphere(2.0f, Vec3(-3.0f, 2.00001f, 5.0f), skinMat));
-////
-////    Medium skMed = mediums[materials[skinMat].medIdx];
-////
-////    printf("(%f, %f, %f)\n", skMed.absCoefficient.x, skMed.absCoefficient.y, skMed.absCoefficient.z);
-//
-//    int emitMat = materials.size();
-//    materials.push_back(Material(Vec3(1.0f, 1.0f, 1.0f), Vec3(4.0f, 4.0f, 4.0f)));
-//
-//    int emitSphereAmt = 12;
-//
-//    float pi2 = 2.0f * 3.141592653589793223f;
-//
-//    float interval = pi2 / ((float) emitSphereAmt);
-//
-//    for(float theta = 0; theta < pi2; theta += interval) {
-//        Sphere sphereToAdd(1.0f, Vec3(10.0f*cos(theta) - 3.0f, 1.00001f, 10.0f*sin(theta) + 5.0f), emitMat);
-//        spheres.push_back(sphereToAdd);
-//    }
-//
-//
-////    int dragonMat = materials.size();
-////    materials.push_back(Material(Vec3(0.7f, 0.3f, 0.3f), 0.103f, 1.495f, 2));
-////    loadObj(triangles, "dragon", skinMat, /*Vec3(-3.0f, 3.00001f, 5.0f)*/Vec3(-3.0f, 0.0f, 5.0f), Vec3(0.4f, 0.4f, 0.4f));
-////    int deerMat = materials.size();
-////    materials.push_back(Material(Vec3(0.3f, 0.3f, 0.9f), 0.103f, 1.3333333f, 1));
-////    loadObj(triangles, "deer", deerMat, /*Vec3(-3.0f, 3.00001f, 5.0f)*/Vec3(-3.0f, 0.0f, 5.0f), Vec3(0.25f, 0.25f, 0.25f));
-////    int sponzaMat = materials.size();
-////    materials.push_back(Material(Vec3(0.9f, 0.9f, 0.9f)));
-////    loadObj(triangles, "sponza", sponzaMat, /*Vec3(-3.0f, 3.00001f, 5.0f)*/Vec3(10.0f, 0.0f, 5.0f), Vec3(0.25f, 0.25f, 0.25f));
-
-    
     /*
      Construct the BVH for all triangles added to the scene, if any.
      */
@@ -417,8 +296,6 @@ void buildScene() {
         cpu_mediums[i] = mediums[i];
     mediums.clear();
     
-    
-    
 }
 
 void createBufferValues() {
@@ -434,13 +311,10 @@ void createBufferValues() {
         cpu_randoms[i] = (cl_uint) (distribution(generator));
     }
     
-//    cpu_accumbuffer = new cl_float3[window_width * window_height];
-    
     // Construct the scene
     buildScene();
     
     // IBL Loading
-//    string ibl_src_str = "res/HDR_040_Field.hdr";
     string ibl_src_str = scn.iblPath;
     cout << ibl_src_str << endl;
     const char* ibl_src = ibl_src_str.c_str();
@@ -452,9 +326,6 @@ void createBufferValues() {
     cpu_ibl = new cl_float3[ibl_width * ibl_height];
     float r, g, b;
     for(int i = 0; i < ibl_width * ibl_height; i++) {
-//        r = pow(result.cols[3*i], 1.0f/2.2f);
-//        g = pow(result.cols[3*i+1], 1.0f/2.2f);
-//        b = pow(result.cols[3*i+2], 1.0f/2.2f);
         r = result.cols[3*i];
         g = result.cols[3*i+1];
         b = result.cols[3*i+2];
@@ -469,11 +340,13 @@ void createBufferValues() {
     cpu_usefulnums[7] = (cl_uint) material_amt;
     cpu_usefulnums[8] = (cl_uint) medium_amt;
     cpu_usefulnums[9] = (cl_uint) samplesPerRun;
+
+    bools = 0;
+    bools |= scn.use_DOF;
+    bools |= scn.use_IbL << 1;
+    bools |= scn.use_ground << 2;
     
-    cpu_usefulnums[10] = 0;
-    cpu_usefulnums[10] |= scn.use_DOF;
-    cpu_usefulnums[10] |= scn.use_IbL << 1;
-    cpu_usefulnums[10] |= scn.use_ground << 2;
+    cpu_usefulnums[10] = bools;
     
     initCamera();
     
@@ -486,9 +359,46 @@ void createBufferValues() {
 
 void writeBufferValues() {
     
+    // Create point buffer on the OpenCL device
+    cl_points = Buffer(context, CL_MEM_WRITE_ONLY, window_width * window_height * sizeof(cl_float3));
+    
+    cout << "Created point buffer \n";
+    
+    // Create normal buffer on the OpenCL device
+    cl_normals = Buffer(context, CL_MEM_WRITE_ONLY, window_width * window_height * sizeof(cl_float3));
+    
+    cout << "Created normal buffer \n";
+    
+    // Create throughput buffer on the OpenCL device
+    cl_throughputs = Buffer(context, CL_MEM_WRITE_ONLY, window_width * window_height * sizeof(cl_float3));
+    
+    cout << "Created throughput buffer \n";
+    
+    // Create actual ID buffer on the OpenCL device
+    cl_actualIDs = Buffer(context, CL_MEM_WRITE_ONLY, window_width * window_height * sizeof(cl_int));
+    
+    cout << "Created actual ID buffer \n";
+    
+    // Create finished buffer on the OpenCL device
+    cl_finished = Buffer(context, CL_MEM_WRITE_ONLY, window_width * window_height * sizeof(cl_uchar));
+    
+    cout << "Created finished buffer \n";
+    
+    // Create material index buffer on the OpenCL device
+    cl_mtlidxs = Buffer(context, CL_MEM_WRITE_ONLY, window_width * window_height * sizeof(cl_int));
+    
+    cout << "Created material index buffer \n";
+    
+    // Create ray buffer on the OpenCL device
+    cl_rays = Buffer(context, CL_MEM_WRITE_ONLY, window_width * window_height * 3 * sizeof(cl_float3));
+    
+    cout << "Created ray buffer \n";
+    
     // Create useful nums buffer on the OpenCL device
     cl_usefulnums = Buffer(context, CL_MEM_READ_ONLY, 11 * sizeof(cl_uint));
     queue.enqueueWriteBuffer(cl_usefulnums, CL_TRUE, 0, 11 * sizeof(cl_uint), cpu_usefulnums);
+    
+    cout << "Wrote useful numbers \n";
     
     // Create random buffer on the OpenCL device
     cl_randoms = Buffer(context, CL_MEM_READ_WRITE, window_width * window_height * sizeof(cl_uint));
@@ -560,7 +470,6 @@ void initCLKernel(){
     kernel = Kernel(program, "render_kernel");
     
     // specify OpenCL kernel arguments
-    //kernel.setArg(0, cl_output);
     kernel.setArg(0, cl_accumbuffer);
     kernel.setArg(1, cl_usefulnums);
     kernel.setArg(2, cl_randoms);
@@ -576,6 +485,178 @@ void initCLKernel(){
     kernel.setArg(12, framenumber);
 
 }
+
+
+void initInitKernel(){
+    
+    // Create a kernel (entry point in the OpenCL source program)
+    init_kernel = Kernel(program, "init_kernel");
+    
+    // specify OpenCL kernel arguments
+    init_kernel.setArg(0, cl_rays);
+    init_kernel.setArg(1, cl_throughputs);
+    init_kernel.setArg(2, cl_randoms);
+    init_kernel.setArg(3, cl_camera);
+    init_kernel.setArg(4, window_width);
+    init_kernel.setArg(5, window_height);
+    init_kernel.setArg(6, bools);
+
+}
+
+
+void initReassignKernel() {
+    
+    // Create a kernel (entry point in the OpenCL source program)
+    reassign_kernel = Kernel(program, "reassign_kernel");
+    
+    // specify OpenCL kernel arguments
+    reassign_kernel.setArg(0, cl_actualIDs);
+    reassign_kernel.setArg(1, cl_finished);
+
+}
+
+
+void initIntersectionKernel() {
+    
+    // Create a kernel (entry point in the OpenCL source program)
+    intersection_kernel = Kernel(program, "intersection_kernel");
+    
+    // specify OpenCL kernel arguments
+    intersection_kernel.setArg(0, cl_finished);
+    intersection_kernel.setArg(1, cl_points);
+    intersection_kernel.setArg(2, cl_normals);
+    intersection_kernel.setArg(3, cl_mtlidxs);
+    intersection_kernel.setArg(4, cl_rays);
+    intersection_kernel.setArg(5, cl_spheres);
+    intersection_kernel.setArg(6, cl_triangles);
+    intersection_kernel.setArg(7, cl_nodes);
+    intersection_kernel.setArg(8, cl_actualIDs);
+    intersection_kernel.setArg(9, sphere_amt);
+    intersection_kernel.setArg(10, bvhnode_amt);
+    intersection_kernel.setArg(11, bools);
+}
+
+
+void initShadingKernel() {
+    
+    // Create a kernel (entry point in the OpenCL source program)
+    shading_kernel = Kernel(program, "shading_kernel");
+    
+    // specify OpenCL kernel arguments
+    shading_kernel.setArg(0, cl_rays);
+    shading_kernel.setArg(1, cl_finished);
+    shading_kernel.setArg(2, cl_accumbuffer);
+    shading_kernel.setArg(3, cl_throughputs);
+    shading_kernel.setArg(4, cl_mtlidxs);
+    shading_kernel.setArg(5, cl_points);
+    shading_kernel.setArg(6, cl_normals);
+    shading_kernel.setArg(7, cl_materials);
+    shading_kernel.setArg(8, cl_ibl);
+    shading_kernel.setArg(9, cl_actualIDs);
+    shading_kernel.setArg(10, cl_randoms);
+    shading_kernel.setArg(11, ibl_width);
+    shading_kernel.setArg(12, ibl_height);
+    shading_kernel.setArg(13, voidcolor);
+    shading_kernel.setArg(14, bools);
+    shading_kernel.setArg(15, 0);
+}
+
+
+void initFinalKernel() {
+    
+    // Create a kernel (entry point in the OpenCL source program)
+    final_kernel = Kernel(program, "final_kernel");
+    
+    // specify OpenCL kernel arguments
+    final_kernel.setArg(0, cl_vbo);
+    final_kernel.setArg(1, cl_accumbuffer);
+    final_kernel.setArg(2, window_width);
+    final_kernel.setArg(3, window_height);
+    final_kernel.setArg(4, framenumber);
+}
+
+
+void initCLKernels() {
+
+    initInitKernel();
+
+    cout << "Initialized Init Kernel\n";
+
+    initReassignKernel();
+
+    cout << "Initialized Reassign Kernel\n";
+
+    initIntersectionKernel();
+
+    cout << "Initialized Intersection Kernel\n";
+
+    initShadingKernel();
+
+    cout << "Initialized Shading Kernel\n";
+
+    initFinalKernel();
+
+    cout << "Initialized Final Kernel\n";
+
+}
+
+std::size_t global_work_size;
+std::size_t local_work_size;
+
+
+void enqueueKernel(Kernel k) {
+    queue.enqueueNDRangeKernel(k, NULL, global_work_size, local_work_size);
+}
+
+
+void runKernels() {
+
+    global_work_size = window_width * window_height;
+    local_work_size = 64;//kernel.getWorkGroupInfo<CL_KERNEL_WORK_GROUP_SIZE>(device);
+    
+    // Ensure the global work size is a multiple of local work size
+    if (global_work_size % local_work_size != 0)
+        global_work_size = (global_work_size / local_work_size + 1) * local_work_size;
+    
+    // Make sure OpenGL is done using the VBOs
+    glFinish();
+    
+    // Pass in the vector of VBO buffer objects
+    queue.enqueueAcquireGLObjects(&cl_vbos);
+    queue.finish();
+    
+    // Launch primary ray kernel
+    enqueueKernel(init_kernel);
+    queue.finish();
+
+    for(int n = 0; n < 1500 && global_work_size > 0; n++) {
+    
+        // Launch reassign kernel
+        enqueueKernel(reassign_kernel);
+        queue.finish();
+
+        // Launch intersection kernel
+        enqueueKernel(intersection_kernel);
+        queue.finish();
+
+        shading_kernel.setArg(15, n);
+
+        // Launch shading kernel
+        enqueueKernel(shading_kernel);
+        queue.finish();
+
+    }
+    
+    // Launch final kernel
+    enqueueKernel(final_kernel);
+    queue.finish();
+    
+    //Release the VBOs so OpenGL can play with them
+    queue.enqueueReleaseGLObjects(&cl_vbos);
+    queue.finish();
+    
+}
+
 
 void runKernel(){
     // every pixel in the image has its own thread or "work item",
@@ -603,63 +684,11 @@ void runKernel(){
     queue.finish();
 }
 
-//inline float clamp(float x){ return x < 0.0f ? 0.0f : x > 1.0f ? 1.0f : x; }
-//
-// // convert RGB float in range [0,1] to int in range [0, 255]
-//inline int toInt(float x){ return int(clamp(x) * 255 + .5); }
-//
-//float filmicF(float f) {
-//    float x = f;
-//    x *= 0.6f;
-//    x = max(0.0f, x - 0.004f);
-//    x = (x*(6.2f*x+.5f))/(x*(6.2f*x+1.7f)+0.06f);
-//    return x;
-//}
-//
-//void saveImage(){
-//
-//    queue.enqueueReadBuffer(cl_accumbuffer, CL_TRUE, 0, window_width * window_height * sizeof(cl_float3), cpu_accumbuffer);
-//    queue.finish();
-//
-//    FILE *f = fopen("opencl_raytracer.ppm", "w");
-//    fprintf(f, "P3\n%d %d\n%d\n", window_width, window_height, 255);
-//
-//    for (int i = 0; i < window_width * window_height; i++) {
-//        int pixel_y = i / window_width;
-//        int pixel_x = i % window_width;
-//        int pos = (window_height - pixel_y)*window_width + pixel_x;
-//        fprintf(f, "%d %d %d ",
-//                toInt(filmicF(cpu_accumbuffer[pos].s[0])),
-//                toInt(filmicF(cpu_accumbuffer[pos].s[1])),
-//                toInt(filmicF(cpu_accumbuffer[pos].s[2])));
-//    }
-//
-//    cout << "Image saved." << endl;
-//}
-
 void render() {
-    
-//    if(framenumber % 16) {
-//        saveImage();
-//    }
-    
-    //cpu_spheres[1].position.y += 0.01f;
-//    queue.enqueueWriteBuffer(cl_spheres, CL_TRUE, 0, sphere_amt * sizeof(Sphere), cpu_spheres);
-//    queue.enqueueWriteBuffer(cl_triangles, CL_TRUE, 0, triangle_amt * sizeof(Triangle), cpu_triangles);
-//    queue.enqueueWriteBuffer(cl_nodes, CL_TRUE, 0, bvhnode_amt * sizeof(BVHNode), cpu_bvhs);
-//    queue.enqueueWriteBuffer(cl_materials, CL_FALSE, 0, material_amt * sizeof(Material), cpu_materials);
-//    queue.enqueueWriteBuffer(cl_mediums, CL_FALSE, 0, medium_amt * sizeof(Medium), cpu_mediums);
-    
-    
-//    for(int i = 0; i < window_width * window_height; i++) {
-//        cpu_randoms[i] = (cl_uint) (rand()*4294967295);
-//    }
-//    queue.enqueueWriteBuffer(cl_randoms, CL_TRUE, 0, window_width * window_height * sizeof(cl_uint), cpu_randoms);
-    
+
     if (buffer_reset){
         float arg = 0;
         queue.enqueueFillBuffer(cl_accumbuffer, arg, 0, window_width * window_height * sizeof(cl_float3));
-//        queue.enqueueWriteBuffer(cl_randoms, arg, 0, window_width * window_height * sizeof(cl_uint), cpu_randoms);
         framenumber = 0;
     }
     buffer_reset = false;
@@ -669,19 +698,15 @@ void render() {
     queue.enqueueWriteBuffer(cl_camera, CL_TRUE, 0, sizeof(Camera), cpu_camera);
     queue.finish();
     
-    // kernel.setArg(0, cl_spheres);  //  works even when commented out/
     kernel.setArg(11, cl_camera);
     kernel.setArg(12, framenumber - 1);
     
     runKernel();
     
-//    if(framenumber % 16 == 0 && framenumber != 0) {
-//        saveImage();
-//    }
-    
     drawGL();
     
     cout << samplesPerRun*framenumber << "\n";
+
 }
 
 void cleanUp(){
@@ -699,23 +724,7 @@ void cleanUp(){
 
 void initCamera() {
     delete interactiveCamera;
-    /*
-     For sponza
-     */
-//    Vec3 cam_pos = Vec3(8.150078f, 1.309537f, 5.077352f);
-//    Vec3 cam_fd = Vec3(0.999952f, -0.009341f, -0.003029f);
-//    Vec3 cam_up = Vec3(0.009341f, 0.999956f, -0.000028f);
-//    float cam_focal_distance = 7.370589916300956f;
-//    float cam_aperture_radius = 1e-8f;
     
-    /*
-     For standard scene
-     */
-//    Vec3 cam_pos = Vec3(4.216578948221484f, 2.375f, 0.34339889486771863f);
-//    Vec3 cam_fd = Vec3(-0.7156478248575902f, -0.05930652721420354f, 0.6959388813727766f);
-//    Vec3 cam_up = Vec3(-0.042517570286490336f, 0.9982398187959389f, 0.04134634672114762f);
-//    float cam_focal_distance = 7.370589916300956f;
-//    float cam_aperture_radius = 8e-2f;
     Vec3 cam_pos = scn.cam_pos;
     Vec3 cam_fd = scn.cam_fd;
     Vec3 cam_up = scn.cam_up;
@@ -765,12 +774,6 @@ int main(int argc, char** argv){
     initCLKernel();
     
     cout << "CL Kernel initialized \n";
-    
-    /*for(int i = 0; i < 1024; i++) {
-        render();
-    }
-    
-    saveImage();*/
     
     // start rendering continuously
     glutMainLoop();
