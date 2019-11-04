@@ -82,8 +82,7 @@ Program program;
 Buffer cl_usefulnums;
 Buffer cl_mediums;
 
-void *global_work_group_size_ptr;
-volatile int *global_work_group_size;
+cl_uint *global_work_group_size;
 Buffer cl_globalworkgroupsize;
 Buffer cl_rays;
 Buffer cl_randoms;
@@ -364,9 +363,10 @@ void createBufferValues() {
 void writeBufferValues() {
     
     // Create point buffer on the OpenCL device
-    cl_globalworkgroupsize = Buffer(context, CL_MEM_ALLOC_HOST_PTR, sizeof(cl_int));
-    global_work_group_size_ptr = queue.enqueueMapBuffer(cl_globalworkgroupsize, CL_TRUE, 0, 0, sizeof(cl_int));
-    global_work_group_size = (int *) global_work_group_size_ptr;
+    cl_globalworkgroupsize = Buffer(context, CL_MEM_READ_ONLY | CL_MEM_ALLOC_HOST_PTR, sizeof(cl_uint));
+    global_work_group_size = (cl_uint *)queue.enqueueMapBuffer(cl_globalworkgroupsize, CL_TRUE, CL_MAP_WRITE, 0, sizeof(cl_uint));  
+     *global_work_group_size = 0;
+    queue.enqueueUnmapMemObject(cl_globalworkgroupsize, global_work_group_size); 
     
     cout << "Created global work group size buffer \n";
     
@@ -507,12 +507,11 @@ void initInitKernel(){
     init_kernel.setArg(0, cl_rays);
     init_kernel.setArg(1, cl_throughputs);
     init_kernel.setArg(2, cl_actualIDs);
-    init_kernel.setArg(3, cl_globalworkgroupsize);
-    init_kernel.setArg(4, cl_randoms);
-    init_kernel.setArg(5, cl_camera);
-    init_kernel.setArg(6, window_width);
-    init_kernel.setArg(7, window_height);
-    init_kernel.setArg(8, bools);
+    init_kernel.setArg(3, cl_randoms);
+    init_kernel.setArg(4, cl_camera);
+    init_kernel.setArg(5, window_width);
+    init_kernel.setArg(6, window_height);
+    init_kernel.setArg(7, bools);
 
 }
 
@@ -546,20 +545,21 @@ void initShadingKernel() {
     // specify OpenCL kernel arguments
     shading_kernel.setArg(0, cl_rays);
     shading_kernel.setArg(1, cl_finished);
-    shading_kernel.setArg(2, cl_accumbuffer);
-    shading_kernel.setArg(3, cl_throughputs);
-    shading_kernel.setArg(4, cl_mtlidxs);
-    shading_kernel.setArg(5, cl_points);
-    shading_kernel.setArg(6, cl_normals);
-    shading_kernel.setArg(7, cl_materials);
-    shading_kernel.setArg(8, cl_ibl);
-    shading_kernel.setArg(9, cl_actualIDs);
-    shading_kernel.setArg(10, cl_randoms);
-    shading_kernel.setArg(11, ibl_width);
-    shading_kernel.setArg(12, ibl_height);
-    shading_kernel.setArg(13, voidcolor);
-    shading_kernel.setArg(14, bools);
-    shading_kernel.setArg(15, 0);
+    shading_kernel.setArg(2, cl_globalworkgroupsize);
+    shading_kernel.setArg(3, cl_accumbuffer);
+    shading_kernel.setArg(4, cl_throughputs);
+    shading_kernel.setArg(5, cl_mtlidxs);
+    shading_kernel.setArg(6, cl_points);
+    shading_kernel.setArg(7, cl_normals);
+    shading_kernel.setArg(8, cl_materials);
+    shading_kernel.setArg(9, cl_ibl);
+    shading_kernel.setArg(10, cl_actualIDs);
+    shading_kernel.setArg(11, cl_randoms);
+    shading_kernel.setArg(12, ibl_width);
+    shading_kernel.setArg(13, ibl_height);
+    shading_kernel.setArg(14, voidcolor);
+    shading_kernel.setArg(15, bools);
+    shading_kernel.setArg(16, 0);
 }
 
 
@@ -571,7 +571,7 @@ void initRmKernel() {
     // specify OpenCL kernel arguments
     rm_kernel.setArg(0, cl_actualIDs);
     rm_kernel.setArg(1, cl_finished);
-    rm_kernel.setArg(2, cl_globalworkgroupsize);
+    rm_kernel.setArg(2, window_width * window_height);
 
 }
 
@@ -613,17 +613,17 @@ void initCLKernels() {
 
 }
 
-std::size_t global_work_size;
-std::size_t local_work_size;
-
 void runKernels() {
 
-    global_work_size = window_width * window_height;
-    local_work_size = 64;//kernel.getWorkGroupInfo<CL_KERNEL_WORK_GROUP_SIZE>(device);
+    std::size_t global_work_size = window_width * window_height;
+    std::size_t local_work_size = init_kernel.getWorkGroupInfo<CL_KERNEL_WORK_GROUP_SIZE>(device);
     
     // Ensure the global work size is a multiple of local work size
-    if (global_work_size % local_work_size != 0)
+    while(global_work_size % local_work_size != 0)
         global_work_size = (global_work_size / local_work_size + 1) * local_work_size;
+
+    // cout << global_work_size << endl;
+    // cout << local_work_size << endl;
     
     // Make sure OpenGL is done using the VBOs
     glFinish();
@@ -631,39 +631,52 @@ void runKernels() {
     // Pass in the vector of VBO buffer objects
     queue.enqueueAcquireGLObjects(&cl_vbos);
     queue.finish();
+
+    global_work_group_size = (cl_uint *)queue.enqueueMapBuffer(cl_globalworkgroupsize, CL_TRUE, CL_MAP_WRITE, 0, sizeof(cl_uint));  
+     *global_work_group_size = window_width * window_height;
+    queue.enqueueUnmapMemObject(cl_globalworkgroupsize, global_work_group_size); 
     
-    // Launch primary ray kernel
-
+    // Launch init kernel
     queue.enqueueNDRangeKernel(init_kernel, NULL, global_work_size, local_work_size);
-    queue.finish();
+    // queue.finish();
 
-    for(int n = 0; n < 1500 && global_work_size > 0; n++) {
+    for(int n = 0; n < 1 && global_work_size > 0; n++) {
 
         // Launch intersection kernel
         queue.enqueueNDRangeKernel(intersection_kernel, NULL, global_work_size, local_work_size);
-        queue.finish();
+        // queue.finish();
 
-        shading_kernel.setArg(15, n);
+        shading_kernel.setArg(16, n);
 
         // Launch shading kernel
         queue.enqueueNDRangeKernel(shading_kernel, NULL, global_work_size, local_work_size);
-        queue.finish();
 
-        // Launch rm kernel
-        queue.enqueueNDRangeKernel(rm_kernel, NULL, global_work_size, local_work_size);
-        queue.finish();
+        // cout << *global_work_group_size << endl;
+        // queue.finish();
+        if(n < 0) {
+            // Get working thread count
+            global_work_group_size = (cl_uint *)queue.enqueueMapBuffer(cl_globalworkgroupsize, CL_FALSE, CL_MAP_READ, 0, sizeof(cl_uint));
+            global_work_size = *global_work_group_size;
+            if(global_work_size == 0) break;
+            // cout << global_work_size << endl;
+            queue.enqueueUnmapMemObject(cl_globalworkgroupsize, global_work_group_size);
 
-        global_work_size = global_work_group_size[0];
-        local_work_size = 64;
+            // Set global_work_size to kernel-computed value;
+            local_work_size = init_kernel.getWorkGroupInfo<CL_KERNEL_WORK_GROUP_SIZE>(device);
 
-        // Ensure the global work size is a multiple of local work size
-        if (global_work_size % local_work_size != 0)
-            global_work_size = (global_work_size / local_work_size + 1) * local_work_size;
+            // Ensure the global work size is a multiple of local work size
+            while(global_work_size % local_work_size != 0)
+                global_work_size = (global_work_size / local_work_size + 1) * local_work_size;
+
+            // Launch rm kernel
+            queue.enqueueNDRangeKernel(rm_kernel, NULL, global_work_size, local_work_size);
+            // queue.finish();
+        }
 
     }
     
     global_work_size = window_width * window_height;
-    local_work_size = 64;//kernel.getWorkGroupInfo<CL_KERNEL_WORK_GROUP_SIZE>(device);
+    local_work_size = init_kernel.getWorkGroupInfo<CL_KERNEL_WORK_GROUP_SIZE>(device);
 
     // Ensure the global work size is a multiple of local work size
     if (global_work_size % local_work_size != 0)
@@ -672,6 +685,7 @@ void runKernels() {
     // Launch final kernel
     queue.enqueueNDRangeKernel(final_kernel, NULL, global_work_size, local_work_size);
     queue.finish();
+    // cout << global_work_group_size[0] << endl;
     
     //Release the VBOs so OpenGL can play with them
     queue.enqueueReleaseGLObjects(&cl_vbos);
@@ -718,12 +732,16 @@ void render() {
     
     interactiveCamera->buildRenderCamera(cpu_camera);
     queue.enqueueWriteBuffer(cl_camera, CL_TRUE, 0, sizeof(Camera), cpu_camera);
+    queue.enqueueFillBuffer(cl_finished, 0, 0, window_width * window_height * sizeof(cl_uchar));
     queue.finish();
     
-    kernel.setArg(11, cl_camera);
-    kernel.setArg(12, framenumber - 1);
+    // kernel.setArg(11, cl_camera);
+    // kernel.setArg(12, framenumber - 1);
+    init_kernel.setArg(4, cl_camera);
+    final_kernel.setArg(4, framenumber - 1);
     
-    runKernel();
+    // runKernel();
+    runKernels();
     
     drawGL();
     
@@ -793,7 +811,8 @@ int main(int argc, char** argv){
     cout << "Buffer values written \n";
     
     // intitialize the kernel
-    initCLKernel();
+    // initCLKernel();
+    initCLKernels();
     
     cout << "CL Kernel initialized \n";
     

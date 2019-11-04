@@ -927,8 +927,8 @@ __kernel void render_kernel(__global float3* accumbuffer, __constant unsigned in
 
 
 __kernel void init_kernel(__global Ray* camera_rays, __global float3* throughputs, __global int* actual_id,
-                          volatile __global int* win, __global unsigned int* randoms, __constant const Camera* cam, 
-                          int width, int height, const uchar bools) {
+                          __global unsigned int* randoms, __constant const Camera* cam, int width, int height, 
+                          const uchar bools) {
 
     const int work_item_id = get_global_id(0);
     actual_id[work_item_id] = work_item_id;
@@ -936,9 +936,6 @@ __kernel void init_kernel(__global Ray* camera_rays, __global float3* throughput
 
     unsigned int y_coord = work_item_id / width;    /* y-coordinate of the pixel */
     unsigned int x_coord = work_item_id - width * y_coord;    /* x-coordinate of the pixel */
-
-    atomic_add(win, 1);
-    mem_fence(CLK_GLOBAL_MEM_FENCE);
 
     camera_rays[work_item_id] = createCamRay(x_coord, height - y_coord, width, height,
                                              bools & 1, &seed, cam);
@@ -958,18 +955,26 @@ __kernel void intersection_kernel(__global unsigned char* finished, __global flo
     
     Ray ray = rays[work_item_id];
 
+    ray.inv_dir = native_recip(ray.dir);
+
     float t = 1e16f;
 
     int mtlidx = -1;
     float3 normal;
     float3 point;
 
-    bool hit = intersect_scene(spheres, triangles, nodes, &ray, &point, &normal, &t, &mtlidx,
-                               sphere_amt, node_amt, bools & 4);
+    /*printf("Ray: {o: (%f, %f, %f), d: (%f, %f, %f), i_d: (%f, %f, %f)\n", 
+           ray.origin.x, ray.origin.y, ray.origin.z, 
+           ray.dir.x, ray.dir.y, ray.dir.z,
+           ray.inv_dir.x, ray.inv_dir.y, ray.inv_dir.z);*/
 
-    finished[work_item_id] = !hit;
+    bool hit = intersect_scene(spheres, triangles, nodes, &ray, &point, &normal, &t, &mtlidx,
+                               sphere_amt, node_amt, (bool) (bools & 4));
+
+    finished[work_item_id] = (uchar) !hit;
+    /*printf("Hit: %d, %d\n", finished[work_item_id], hit);*/
+    materials[work_item_id] = mtlidx;
     if(hit) {
-        materials[work_item_id] = mtlidx;
         points[work_item_id] = point;
         normals[work_item_id] = normal;
     }
@@ -983,12 +988,12 @@ __kernel void intersection_kernel(__global unsigned char* finished, __global flo
   - Gives/Sets: finished, accumbuffer, throughput
  */
 
-__kernel void shading_kernel(__global Ray* rays, __global unsigned char* finished, __global float3* accumbuffer, 
-                             __global float3* throughputs, __global int* mtlidxs, __global float3* points, 
-                             __global float3* normals, __constant Material* materials, __global float3* ibl, 
-                             __global int* actual_id, __global unsigned int* randoms, const int ibl_width, 
-                             const int ibl_height, const float3 void_color, const uchar bools, 
-                             const unsigned int current_iteration) {
+__kernel void shading_kernel(__global Ray* rays, __global unsigned char* finished, volatile  __global int *win,
+                             __global float3* accumbuffer, __global float3* throughputs, __global int* mtlidxs, 
+                             __global float3* points, __global float3* normals, __constant Material* materials, 
+                             __global float3* ibl, __global int* actual_id, __global unsigned int* randoms, 
+                             const int ibl_width, const int ibl_height, const float3 void_color, 
+                             const uchar bools, const unsigned int current_iteration) {
 
     const int work_item_id = actual_id[get_global_id(0)];
     unsigned int seed = randoms[work_item_id];
@@ -1007,10 +1012,15 @@ __kernel void shading_kernel(__global Ray* rays, __global unsigned char* finishe
 
         Material mtl = mtlidx < 0 ? ground : materials[mtlidx];
 
+        /*printf("%d\n", mtlidx);
+        printf("%d\n", mtl.type);*/
+
         if(current_iteration > 3) {
             float p = max(throughput.x, max(throughput.y, throughput.z));
             if(rand(seed) > p) {
                 finished[work_item_id] = true;
+                atomic_sub(win, 1);
+                mem_fence(CLK_GLOBAL_MEM_FENCE);
                 return;
             }
 
@@ -1047,6 +1057,8 @@ __kernel void shading_kernel(__global Ray* rays, __global unsigned char* finishe
         } else {
             accumbuffer[work_item_id] += throughput * void_color;
         }
+        atomic_sub(win, 1);
+        mem_fence(CLK_GLOBAL_MEM_FENCE);
         return;
     }
 
@@ -1058,29 +1070,24 @@ __kernel void shading_kernel(__global Ray* rays, __global unsigned char* finishe
 }
 
 
-__kernel void rm_kernel(__global int* actual_id, __global unsigned char* finished, volatile  __global int *win) {
+__kernel void rm_kernel(__global int* actual_id, __global unsigned char* finished, const int totalsize) {
 
     const int work_item_id = get_global_id(0);
-    const int global_size = get_global_size(0);
 
-    int untilusage = work_item_id;
+    const int maxVal = get_global_size(0);
 
-    int i = 0;
-    int idx = actual_id[0];
+    const int canSkipAheadIdx = get_group_id(0) * get_local_size(0);
+    const int canSkipAhead = actual_id[canSkipAheadIdx];
 
-    while(idx < global_size) {
-        if(finished[idx] != 0 && --untilusage < 0) break;
-        idx = actual_id[++i];
+    int untilusage = get_local_id(0);
+
+    int i = canSkipAhead;
+
+    while(i < totalsize) {
+        if(finished[i] == 0 && untilusage-- == 0) break;
+        i++;
     }
-
-    /*while((finished[idx = actual_id[++i]] != 0 || --untilusage != 0) && i < global_size);*/
-
-    actual_id[work_item_id] = idx;
-
-    if(i > global_size) {
-        atomic_sub(win, 1);
-        mem_fence(CLK_GLOBAL_MEM_FENCE);
-    }
+    actual_id[work_item_id] = i;
 }
 
 
