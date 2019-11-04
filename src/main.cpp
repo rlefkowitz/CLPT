@@ -71,9 +71,10 @@ Device device;
 CommandQueue queue;
 Kernel kernel;
 Kernel init_kernel;
-Kernel rm_kernel;
 Kernel intersection_kernel;
 Kernel shading_kernel;
+Kernel rmo_kernel;
+Kernel rmf_kernel;
 Kernel final_kernel;
 Context context;
 Program program;
@@ -88,6 +89,7 @@ Buffer cl_rays;
 Buffer cl_randoms;
 Buffer cl_camera;
 Buffer cl_actualIDs;
+Buffer cl_actualIDsTemp;
 Buffer cl_finished;
 Buffer cl_points;
 Buffer cl_normals;
@@ -200,11 +202,13 @@ void initOpenCL()
     
     // Create a command queue
     context = Context(device, properties);
+    cout << "Created context\n";
     if(profiling) {
         queue = CommandQueue(context, device, CL_QUEUE_PROFILING_ENABLE);
     } else {
         queue = CommandQueue(context, device);
     }
+    cout << "Created queue\n";
     
     // Convert the OpenCL source code to a string// Convert the OpenCL source code to a string
     string source;
@@ -224,9 +228,11 @@ void initOpenCL()
     
     // Create an OpenCL program with source
     program = Program(context, kernel_source);
+    cout << "Created program\n";
     
     // Build the program for the selected device
     cl_int result = program.build({ device }); // "-cl-fast-relaxed-math"
+    cout << "Built program on device\n";
     if (result) cout << "Error during compilation OpenCL code!!!\n (" << result << ")" << endl;
     if (result == CL_BUILD_PROGRAM_FAILURE) printErrorLog(program, device);
     
@@ -362,48 +368,53 @@ void createBufferValues() {
 
 void writeBufferValues() {
     
-    // Create point buffer on the OpenCL device
-    cl_globalworkgroupsize = Buffer(context, CL_MEM_READ_ONLY | CL_MEM_ALLOC_HOST_PTR, sizeof(cl_uint));
-    global_work_group_size = (cl_uint *)queue.enqueueMapBuffer(cl_globalworkgroupsize, CL_TRUE, CL_MAP_WRITE, 0, sizeof(cl_uint));  
-     *global_work_group_size = 0;
-    queue.enqueueUnmapMemObject(cl_globalworkgroupsize, global_work_group_size); 
+    // // Create point buffer on the OpenCL device
+    // cl_globalworkgroupsize = Buffer(context, CL_MEM_READ_ONLY | CL_MEM_ALLOC_HOST_PTR, sizeof(cl_uint));
+    // global_work_group_size = (cl_uint *)queue.enqueueMapBuffer(cl_globalworkgroupsize, CL_TRUE, CL_MAP_WRITE, 0, sizeof(cl_uint));  
+    //  *global_work_group_size = 0;
+    // queue.enqueueUnmapMemObject(cl_globalworkgroupsize, global_work_group_size); 
     
-    cout << "Created global work group size buffer \n";
+    // cout << "Created global work group size buffer \n";
     
-    // Create point buffer on the OpenCL device
-    cl_points = Buffer(context, CL_MEM_WRITE_ONLY, window_width * window_height * sizeof(cl_float3));
+    // // Create point buffer on the OpenCL device
+    // cl_points = Buffer(context, CL_MEM_WRITE_ONLY, window_width * window_height * sizeof(cl_float3));
     
-    cout << "Created point buffer \n";
+    // cout << "Created point buffer \n";
     
-    // Create normal buffer on the OpenCL device
-    cl_normals = Buffer(context, CL_MEM_WRITE_ONLY, window_width * window_height * sizeof(cl_float3));
+    // // Create normal buffer on the OpenCL device
+    // cl_normals = Buffer(context, CL_MEM_WRITE_ONLY, window_width * window_height * sizeof(cl_float3));
     
-    cout << "Created normal buffer \n";
+    // cout << "Created normal buffer \n";
     
-    // Create throughput buffer on the OpenCL device
-    cl_throughputs = Buffer(context, CL_MEM_WRITE_ONLY, window_width * window_height * sizeof(cl_float3));
+    // // Create throughput buffer on the OpenCL device
+    // cl_throughputs = Buffer(context, CL_MEM_WRITE_ONLY, window_width * window_height * sizeof(cl_float3));
     
-    cout << "Created throughput buffer \n";
+    // cout << "Created throughput buffer \n";
     
-    // Create actual ID buffer on the OpenCL device
-    cl_actualIDs = Buffer(context, CL_MEM_WRITE_ONLY, window_width * window_height * sizeof(cl_int));
+    // // Create actual ID buffer on the OpenCL device
+    // cl_actualIDs = Buffer(context, CL_MEM_WRITE_ONLY, window_width * window_height * sizeof(cl_int));
     
-    cout << "Created actual ID buffer \n";
+    // cout << "Created actual ID buffer \n";
     
-    // Create finished buffer on the OpenCL device
-    cl_finished = Buffer(context, CL_MEM_WRITE_ONLY, window_width * window_height * sizeof(cl_uchar));
+    // // Create actual ID temp buffer on the OpenCL device
+    // cl_actualIDsTemp = Buffer(context, CL_MEM_WRITE_ONLY, window_width * window_height * sizeof(cl_int));
     
-    cout << "Created finished buffer \n";
+    // cout << "Created actual ID temp buffer \n";
     
-    // Create material index buffer on the OpenCL device
-    cl_mtlidxs = Buffer(context, CL_MEM_WRITE_ONLY, window_width * window_height * sizeof(cl_int));
+    // // Create finished buffer on the OpenCL device
+    // cl_finished = Buffer(context, CL_MEM_WRITE_ONLY, window_width * window_height * sizeof(cl_uchar));
     
-    cout << "Created material index buffer \n";
+    // cout << "Created finished buffer \n";
     
-    // Create ray buffer on the OpenCL device
-    cl_rays = Buffer(context, CL_MEM_WRITE_ONLY, window_width * window_height * 3 * sizeof(cl_float3));
+    // // Create material index buffer on the OpenCL device
+    // cl_mtlidxs = Buffer(context, CL_MEM_WRITE_ONLY, window_width * window_height * sizeof(cl_int));
     
-    cout << "Created ray buffer \n";
+    // cout << "Created material index buffer \n";
+    
+    // // Create ray buffer on the OpenCL device
+    // cl_rays = Buffer(context, CL_MEM_WRITE_ONLY, window_width * window_height * 3 * sizeof(cl_float3));
+    
+    // cout << "Created ray buffer \n";
     
     // Create useful nums buffer on the OpenCL device
     cl_usefulnums = Buffer(context, CL_MEM_READ_ONLY, 11 * sizeof(cl_uint));
@@ -563,15 +574,28 @@ void initShadingKernel() {
 }
 
 
-void initRmKernel() {
+void initRmoKernel() {
     
     // Create a kernel (entry point in the OpenCL source program)
-    rm_kernel = Kernel(program, "rm_kernel");
+    rmo_kernel = Kernel(program, "rmo_kernel");
     
     // specify OpenCL kernel arguments
-    rm_kernel.setArg(0, cl_actualIDs);
-    rm_kernel.setArg(1, cl_finished);
-    rm_kernel.setArg(2, window_width * window_height);
+    rmo_kernel.setArg(0, cl_actualIDs);
+    rmo_kernel.setArg(1, cl_actualIDsTemp);
+    rmo_kernel.setArg(2, cl_finished);
+    rmo_kernel.setArg(3, window_width * window_height);
+
+}
+
+
+void initRmfKernel() {
+    
+    // Create a kernel (entry point in the OpenCL source program)
+    rmf_kernel = Kernel(program, "rmf_kernel");
+    
+    // specify OpenCL kernel arguments
+    rmf_kernel.setArg(0, cl_actualIDs);
+    rmf_kernel.setArg(1, cl_actualIDsTemp);
 
 }
 
@@ -595,10 +619,6 @@ void initCLKernels() {
 
     cout << "Initialized Init Kernel\n";
 
-    initRmKernel();
-
-    cout << "Initialized Rm Kernel\n";
-
     initIntersectionKernel();
 
     cout << "Initialized Intersection Kernel\n";
@@ -606,6 +626,14 @@ void initCLKernels() {
     initShadingKernel();
 
     cout << "Initialized Shading Kernel\n";
+
+    initRmoKernel();
+
+    cout << "Initialized Rm Kernel\n";
+
+    initRmfKernel();
+
+    cout << "Initialized Rmf Kernel\n";
 
     initFinalKernel();
 
@@ -658,18 +686,19 @@ void runKernels() {
             global_work_group_size = (cl_uint *)queue.enqueueMapBuffer(cl_globalworkgroupsize, CL_FALSE, CL_MAP_READ, 0, sizeof(cl_uint));
             global_work_size = *global_work_group_size;
             if(global_work_size == 0) break;
-            // cout << global_work_size << endl;
+            cout << global_work_size << endl;
             queue.enqueueUnmapMemObject(cl_globalworkgroupsize, global_work_group_size);
 
             // Set global_work_size to kernel-computed value;
             local_work_size = init_kernel.getWorkGroupInfo<CL_KERNEL_WORK_GROUP_SIZE>(device);
 
             // Ensure the global work size is a multiple of local work size
-            while(global_work_size % local_work_size != 0)
-                global_work_size = (global_work_size / local_work_size + 1) * local_work_size;
+            // while(global_work_size % local_work_size != 0)
+            //     global_work_size = (global_work_size / local_work_size + 1) * local_work_size;
 
             // Launch rm kernel
-            queue.enqueueNDRangeKernel(rm_kernel, NULL, global_work_size, local_work_size);
+            // queue.enqueueNDRangeKernel(rmo_kernel, NULL, global_work_size, local_work_size);
+            // queue.enqueueNDRangeKernel(rmf_kernel, NULL, global_work_size, local_work_size);
             // queue.finish();
         }
 
@@ -732,16 +761,16 @@ void render() {
     
     interactiveCamera->buildRenderCamera(cpu_camera);
     queue.enqueueWriteBuffer(cl_camera, CL_TRUE, 0, sizeof(Camera), cpu_camera);
-    queue.enqueueFillBuffer(cl_finished, 0, 0, window_width * window_height * sizeof(cl_uchar));
+    // queue.enqueueFillBuffer(cl_finished, 0, 0, window_width * window_height * sizeof(cl_uchar));
     queue.finish();
     
-    // kernel.setArg(11, cl_camera);
-    // kernel.setArg(12, framenumber - 1);
-    init_kernel.setArg(4, cl_camera);
-    final_kernel.setArg(4, framenumber - 1);
+    kernel.setArg(11, cl_camera);
+    kernel.setArg(12, framenumber - 1);
+    // init_kernel.setArg(4, cl_camera);
+    // final_kernel.setArg(4, framenumber - 1);
     
-    // runKernel();
-    runKernels();
+    runKernel();
+    // runKernels();
     
     drawGL();
     
@@ -811,8 +840,8 @@ int main(int argc, char** argv){
     cout << "Buffer values written \n";
     
     // intitialize the kernel
-    // initCLKernel();
-    initCLKernels();
+    initCLKernel();
+    // initCLKernels();
     
     cout << "CL Kernel initialized \n";
     

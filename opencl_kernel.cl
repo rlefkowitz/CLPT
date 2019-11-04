@@ -662,6 +662,8 @@ void bsdf(unsigned int *seed, float3 n, float3 wo, float3* wr, float3* kd, float
           Material m, float* brdf, bool* transmitted) {
 
     int type = m.type;
+    /*float3 diff = *kd;
+    printf("(%f, %f, %f)", diff.x, diff.y, diff.z);*/
     if(type == 0) {
         diffuse_brdf(seed, n, wr);
     }
@@ -1030,7 +1032,7 @@ __kernel void shading_kernel(__global Ray* rays, __global unsigned char* finishe
         float3 kd = mtl.kd;
         float3 ke = mtl.ke;
 
-        int thold;
+        bool thold = false;
 
         bsdf(seed, normal, -1.0f * ray.dir, &wr, &kd, &ke, mtl, &brdf, &thold);
 
@@ -1069,25 +1071,37 @@ __kernel void shading_kernel(__global Ray* rays, __global unsigned char* finishe
     randoms[work_item_id] = seed;
 }
 
+/*
 
-__kernel void rm_kernel(__global int* actual_id, __global unsigned char* finished, const int totalsize) {
+ This kernel is supposed to ensure the retired pixels are not in indices [0, get_global_size(0)) in actual_id
+
+ */
+__kernel void rmo_kernel(__global int* actual_id_temp, __global int* actual_id, 
+                         __global unsigned char* finished, const int totalsize) {
 
     const int work_item_id = get_global_id(0);
 
     const int maxVal = get_global_size(0);
 
-    const int canSkipAheadIdx = get_group_id(0) * get_local_size(0);
-    const int canSkipAhead = actual_id[canSkipAheadIdx];
+    int untilusage = work_item_id;
 
-    int untilusage = get_local_id(0);
+    int i = 0;
+    int idx = actual_id[0];
 
-    int i = canSkipAhead;
-
-    while(i < totalsize) {
-        if(finished[i] == 0 && untilusage-- == 0) break;
-        i++;
+    while(idx < totalsize) {
+        if(finished[idx] == 0 && untilusage-- == 0) break;
+        idx = actual_id[++i];
     }
-    actual_id[work_item_id] = i;
+    actual_id_temp[work_item_id] = idx;
+}
+
+
+__kernel void rmf_kernel(__global int* actual_id, __global int* actual_id_temp) {
+
+    const int work_item_id = get_global_id(0);
+
+    actual_id[work_item_id] = actual_id_temp[work_item_id];
+    
 }
 
 

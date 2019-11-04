@@ -1,0 +1,18 @@
+ # set camera attributes
+setCameraPosition 8.150078 1.309537 5.077352
+setCameraForward 0.999952 -0.009341 -0.003029
+setCameraUp 0.009341 0.999956 -0.000028
+setCameraFocalDistance 7.370589916300956
+setCameraApertureRadius 1e-8
+
+ # toggle options
+enableIbL
+enableDOF
+#enableGround
+
+ # add IbL
+iblPath res/Frozen_Waterfall_Ref.hdr
+
+material sponzaMat diffuse 0.9 0.9 0.9
+
+mesh sponza 10 0 5 0.25 0.25 0.25 sponzaMat
