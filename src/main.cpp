@@ -71,7 +71,7 @@ Device device;
 CommandQueue queue;
 Kernel kernel;
 Kernel init_kernel;
-Kernel reassign_kernel;
+Kernel rm_kernel;
 Kernel intersection_kernel;
 Kernel shading_kernel;
 Kernel final_kernel;
@@ -81,6 +81,10 @@ Program program;
 // Device (CPU/GPU) Buffers
 Buffer cl_usefulnums;
 Buffer cl_mediums;
+
+void *global_work_group_size_ptr;
+volatile int *global_work_group_size;
+Buffer cl_globalworkgroupsize;
 Buffer cl_rays;
 Buffer cl_randoms;
 Buffer cl_camera;
@@ -360,6 +364,13 @@ void createBufferValues() {
 void writeBufferValues() {
     
     // Create point buffer on the OpenCL device
+    cl_globalworkgroupsize = Buffer(context, CL_MEM_ALLOC_HOST_PTR, sizeof(cl_int));
+    global_work_group_size_ptr = queue.enqueueMapBuffer(cl_globalworkgroupsize, CL_TRUE, 0, 0, sizeof(cl_int));
+    global_work_group_size = (int *) global_work_group_size_ptr;
+    
+    cout << "Created global work group size buffer \n";
+    
+    // Create point buffer on the OpenCL device
     cl_points = Buffer(context, CL_MEM_WRITE_ONLY, window_width * window_height * sizeof(cl_float3));
     
     cout << "Created point buffer \n";
@@ -495,23 +506,13 @@ void initInitKernel(){
     // specify OpenCL kernel arguments
     init_kernel.setArg(0, cl_rays);
     init_kernel.setArg(1, cl_throughputs);
-    init_kernel.setArg(2, cl_randoms);
-    init_kernel.setArg(3, cl_camera);
-    init_kernel.setArg(4, window_width);
-    init_kernel.setArg(5, window_height);
-    init_kernel.setArg(6, bools);
-
-}
-
-
-void initReassignKernel() {
-    
-    // Create a kernel (entry point in the OpenCL source program)
-    reassign_kernel = Kernel(program, "reassign_kernel");
-    
-    // specify OpenCL kernel arguments
-    reassign_kernel.setArg(0, cl_actualIDs);
-    reassign_kernel.setArg(1, cl_finished);
+    init_kernel.setArg(2, cl_actualIDs);
+    init_kernel.setArg(3, cl_globalworkgroupsize);
+    init_kernel.setArg(4, cl_randoms);
+    init_kernel.setArg(5, cl_camera);
+    init_kernel.setArg(6, window_width);
+    init_kernel.setArg(7, window_height);
+    init_kernel.setArg(8, bools);
 
 }
 
@@ -562,6 +563,18 @@ void initShadingKernel() {
 }
 
 
+void initRmKernel() {
+    
+    // Create a kernel (entry point in the OpenCL source program)
+    rm_kernel = Kernel(program, "rm_kernel");
+    
+    // specify OpenCL kernel arguments
+    rm_kernel.setArg(0, cl_actualIDs);
+    rm_kernel.setArg(1, cl_finished);
+    rm_kernel.setArg(2, cl_globalworkgroupsize);
+
+}
+
 void initFinalKernel() {
     
     // Create a kernel (entry point in the OpenCL source program)
@@ -582,9 +595,9 @@ void initCLKernels() {
 
     cout << "Initialized Init Kernel\n";
 
-    initReassignKernel();
+    initRmKernel();
 
-    cout << "Initialized Reassign Kernel\n";
+    cout << "Initialized Rm Kernel\n";
 
     initIntersectionKernel();
 
@@ -603,12 +616,6 @@ void initCLKernels() {
 std::size_t global_work_size;
 std::size_t local_work_size;
 
-
-void enqueueKernel(Kernel k) {
-    queue.enqueueNDRangeKernel(k, NULL, global_work_size, local_work_size);
-}
-
-
 void runKernels() {
 
     global_work_size = window_width * window_height;
@@ -626,29 +633,44 @@ void runKernels() {
     queue.finish();
     
     // Launch primary ray kernel
-    enqueueKernel(init_kernel);
+
+    queue.enqueueNDRangeKernel(init_kernel, NULL, global_work_size, local_work_size);
     queue.finish();
 
     for(int n = 0; n < 1500 && global_work_size > 0; n++) {
-    
-        // Launch reassign kernel
-        enqueueKernel(reassign_kernel);
-        queue.finish();
 
         // Launch intersection kernel
-        enqueueKernel(intersection_kernel);
+        queue.enqueueNDRangeKernel(intersection_kernel, NULL, global_work_size, local_work_size);
         queue.finish();
 
         shading_kernel.setArg(15, n);
 
         // Launch shading kernel
-        enqueueKernel(shading_kernel);
+        queue.enqueueNDRangeKernel(shading_kernel, NULL, global_work_size, local_work_size);
         queue.finish();
+
+        // Launch rm kernel
+        queue.enqueueNDRangeKernel(rm_kernel, NULL, global_work_size, local_work_size);
+        queue.finish();
+
+        global_work_size = global_work_group_size[0];
+        local_work_size = 64;
+
+        // Ensure the global work size is a multiple of local work size
+        if (global_work_size % local_work_size != 0)
+            global_work_size = (global_work_size / local_work_size + 1) * local_work_size;
 
     }
     
+    global_work_size = window_width * window_height;
+    local_work_size = 64;//kernel.getWorkGroupInfo<CL_KERNEL_WORK_GROUP_SIZE>(device);
+
+    // Ensure the global work size is a multiple of local work size
+    if (global_work_size % local_work_size != 0)
+        global_work_size = (global_work_size / local_work_size + 1) * local_work_size;
+
     // Launch final kernel
-    enqueueKernel(final_kernel);
+    queue.enqueueNDRangeKernel(final_kernel, NULL, global_work_size, local_work_size);
     queue.finish();
     
     //Release the VBOs so OpenGL can play with them

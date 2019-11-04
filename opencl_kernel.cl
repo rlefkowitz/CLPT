@@ -923,55 +923,29 @@ __kernel void render_kernel(__global float3* accumbuffer, __constant unsigned in
     fcolor.components = (uchar4)(convert_uchar3(res * 255), 1);
 
     output[work_item_id] = (float3)(x_coord, y_coord, fcolor.c);
-    /*const unsigned int width = usefulnums[0];
-    const unsigned int height = usefulnums[1];
-    const unsigned int samples = usefulnums[9];
-    const unsigned int bools = usefulnums[10];
-    const int work_item_id = pix_coord(width, height, get_global_id(0));
-    unsigned int seed = randoms[work_item_id];
-    unsigned int y_coord = work_item_id / width;
-    unsigned int x_coord = work_item_id - width * y_coord;
-
-    Ray camray = createCamRay(x_coord, height - y_coord, width, usefulnums[1], bools & 1, &seed, cam);
-
-    accumbuffer[work_item_id] += trace(spheres, triangles, nodes, materials, mediums,
-                                       &camray, usefulnums[4], usefulnums[5], usefulnums[6],
-                                       usefulnums[7], usefulnums[8], &seed, usefulnums[2], usefulnums[3],
-                                       ibl, void_color, bools & 2, bools & 4);*/
 }
 
 
-__kernel void init_kernel(__global Ray* camera_rays, __global float3* throughputs,
-                          __global unsigned int* randoms, __constant const Camera* cam, int width, 
-                          int height, const uchar bools) {
+__kernel void init_kernel(__global Ray* camera_rays, __global float3* throughputs, __global int* actual_id,
+                          volatile __global int* win, __global unsigned int* randoms, __constant const Camera* cam, 
+                          int width, int height, const uchar bools) {
 
     const int work_item_id = get_global_id(0);
+    actual_id[work_item_id] = work_item_id;
     unsigned int seed = randoms[work_item_id];
 
     unsigned int y_coord = work_item_id / width;    /* y-coordinate of the pixel */
     unsigned int x_coord = work_item_id - width * y_coord;    /* x-coordinate of the pixel */
 
+    atomic_add(win, 1);
+    mem_fence(CLK_GLOBAL_MEM_FENCE);
+
     camera_rays[work_item_id] = createCamRay(x_coord, height - y_coord, width, height,
-                                            bools & 1, &seed, cam);
+                                             bools & 1, &seed, cam);
 
     throughputs[work_item_id] = (float3)(1.0f, 1.0f, 1.0f);
 
     randoms[work_item_id] = seed;
-}
-
-
-__kernel void reassign_kernel(__global int* actual_id, __global unsigned char* finished) {
-    
-    const int work_item_id = get_global_id(0);
-
-    int untilusage = work_item_id;
-
-    int i = 0;
-
-    while(finished[++i] != 0 || --untilusage != 0);
-
-    actual_id[work_item_id] = i;
-
 }
 
 
@@ -1081,6 +1055,32 @@ __kernel void shading_kernel(__global Ray* rays, __global unsigned char* finishe
     rays[work_item_id] = ray;
 
     randoms[work_item_id] = seed;
+}
+
+
+__kernel void rm_kernel(__global int* actual_id, __global unsigned char* finished, volatile  __global int *win) {
+
+    const int work_item_id = get_global_id(0);
+    const int global_size = get_global_size(0);
+
+    int untilusage = work_item_id;
+
+    int i = 0;
+    int idx = actual_id[0];
+
+    while(idx < global_size) {
+        if(finished[idx] != 0 && --untilusage < 0) break;
+        idx = actual_id[++i];
+    }
+
+    /*while((finished[idx = actual_id[++i]] != 0 || --untilusage != 0) && i < global_size);*/
+
+    actual_id[work_item_id] = idx;
+
+    if(i > global_size) {
+        atomic_sub(win, 1);
+        mem_fence(CLK_GLOBAL_MEM_FENCE);
+    }
 }
 
 
