@@ -951,7 +951,8 @@ __kernel void intersection_kernel(__global unsigned char* finished, __global flo
                                   __global Triangle* triangles, __global BVHNode* nodes, __global int* actual_id, 
                                   const int sphere_amt, const int node_amt, const uchar bools) {
 
-    const int work_item_id = actual_id[get_global_id(0)];
+    const int glob_id = get_global_id(0);
+    const int work_item_id = actual_id[glob_id];
     
     Ray ray = rays[work_item_id];
 
@@ -973,7 +974,7 @@ __kernel void intersection_kernel(__global unsigned char* finished, __global flo
     bool hit = intersect_scene(spheres, triangles, nodes, &ray, &point, &normal, &t, &mtlidx,
                                sphere_amt, node_amt, (bool) (bools & 4));
 
-    finished[work_item_id] = (uchar) !hit;
+    finished[glob_id] = (uchar) !hit;
     /*printf("Hit: %d, %d\n", finished[work_item_id], hit);*/
     materials[work_item_id] = mtlidx;
     if(hit) {
@@ -997,14 +998,15 @@ __kernel void shading_kernel(__global Ray* rays, __global unsigned char* finishe
                              const int ibl_width, const int ibl_height, const float3 void_color, 
                              const uchar bools, const unsigned int current_iteration) {
 
-    const int work_item_id = actual_id[get_global_id(0)];
+    const int glob_id = get_global_id(0);
+    const int work_item_id = actual_id[glob_id];
     unsigned int seed = randoms[work_item_id];
 
     Ray ray = rays[work_item_id];
 
     float3 throughput = throughputs[work_item_id];
 
-    if(finished[work_item_id] == 0) {
+    if(finished[glob_id] == 0) {
 
         int mtlidx = mtlidxs[work_item_id];
         float3 point = points[work_item_id];
@@ -1020,7 +1022,7 @@ __kernel void shading_kernel(__global Ray* rays, __global unsigned char* finishe
         if(current_iteration > 3) {
             float p = max(throughput.x, max(throughput.y, throughput.z));
             if(rand(&seed) > p) {
-                finished[work_item_id] = 1;
+                finished[glob_id] = 1;
                 randoms[work_item_id] = seed;
                 return;
             }

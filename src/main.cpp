@@ -714,9 +714,9 @@ void runKernels() {
             // if(global_work_size == 0) break;
             // cout << global_work_group_size[0] << endl;
             // queue.enqueueUnmapMemObject(cl_globalworkgroupsize, global_work_group_size);
-            queue.enqueueReadBuffer(cl_finished, CL_FALSE, 0, window_width * window_height * sizeof(cl_uchar), cpu_finished);
 
             global_work_size = global_work_size_tmp;
+            queue.enqueueReadBuffer(cl_finished, CL_FALSE, 0, global_work_size * sizeof(cl_uchar), cpu_finished);
 
             int global_work_size_old = global_work_size;
 
@@ -729,9 +729,9 @@ void runKernels() {
             
             int currentpos = 0;
 
-            if(n == 0) {
+            queue.finish();
+            if(n == 0 || global_work_size == window_width * window_height) {
 
-                queue.finish();
                 while(i < global_work_size_old) {
                     int in_a_row = 0;
                     while(cpu_finished[i]) {
@@ -754,29 +754,27 @@ void runKernels() {
                     //     shifts.push_back(ns);
                     //     totalshift += in_a_row;
                     // }
-                    cpu_actualIDs[currentpos] = (cl_int) i;
+                    cpu_actualIDs[currentpos] = i;
+                    cpu_finished[currentpos] = cpu_finished[i];
                     i++;
                     currentpos++;
                 }
             } else {
-                queue.enqueueReadBuffer(cl_actualIDs, CL_FALSE, 0, global_work_size * cl_int_size, cpu_actualIDs);
+                // queue.enqueueReadBuffer(cl_actualIDs, CL_FALSE, 0, global_work_size * cl_int_size, cpu_actualIDs);
 
                 // std::vector<Shift> shifts;
                 // shifts.clear();
                 // int totalshift = 0;
 
-                queue.finish();
                 while(i < global_work_size_old) {
-                    idx = cpu_actualIDs[i];
                     int in_a_row = 0;
-                    while(cpu_finished[idx]) {
+                    while(cpu_finished[i]) {
                         in_a_row++;
                         i++;
                         if(i == global_work_size_old) {
                             allthewayout = true;
                             break;
                         }
-                        idx = cpu_actualIDs[i];
                     }
                     global_work_size -= in_a_row;
 
@@ -791,6 +789,7 @@ void runKernels() {
                     //     totalshift += in_a_row;
                     // }
                     cpu_actualIDs[currentpos] = cpu_actualIDs[i];
+                    cpu_finished[currentpos] = cpu_finished[i];
                     i++;
                     currentpos++;
                 }
@@ -814,24 +813,27 @@ void runKernels() {
                 // cout << "Shifted memory.\n";
             }
 
+
+            if(global_work_size_old - global_work_size) {
+                queue.enqueueWriteBuffer(cl_finished, CL_FALSE, 0, global_work_size * cl_int_size, cpu_finished);
+                queue.enqueueWriteBuffer(cl_actualIDs, CL_FALSE, 0, global_work_size * cl_int_size, cpu_actualIDs);
+
+                // Set global_work_size to kernel-computed value;
+                global_work_size_tmp = global_work_size;
+                local_work_size = init_kernel.getWorkGroupInfo<CL_KERNEL_WORK_GROUP_SIZE>(device);
+
+                // Ensure the global work size is a multiple of local work size
+                if(global_work_size % local_work_size != 0)
+                    global_work_size = (global_work_size / local_work_size + 1) * local_work_size;
+
+                queue.finish();
+            }
             // End timer
             auto finish = std::chrono::high_resolution_clock::now();
             
             std::chrono::duration<double> elapsed = finish - start;
 
             printf("Killed %d threads and reindexed and wrote the remainder in %f s.\n", global_work_size_old - global_work_size, elapsed.count());
-
-            queue.enqueueWriteBuffer(cl_actualIDs, CL_FALSE, 0, global_work_size * cl_int_size, cpu_actualIDs);
-
-            // Set global_work_size to kernel-computed value;
-            global_work_size_tmp = global_work_size;
-            local_work_size = init_kernel.getWorkGroupInfo<CL_KERNEL_WORK_GROUP_SIZE>(device);
-
-            // Ensure the global work size is a multiple of local work size
-            if(global_work_size % local_work_size != 0)
-                global_work_size = (global_work_size / local_work_size + 1) * local_work_size;
-
-            queue.finish();
 
         }
 
