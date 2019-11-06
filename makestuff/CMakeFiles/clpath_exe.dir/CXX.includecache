@@ -75,6 +75,8 @@ parser.h
 /Users/ryanlefkowitz/Programming/OpenCL/CLPT/src/hdrloader/hdrloader.h
 
 /Users/ryanlefkowitz/Programming/OpenCL/CLPT/src/main.cpp
+chrono
+-
 iostream
 -
 fstream

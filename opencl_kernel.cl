@@ -662,8 +662,6 @@ void bsdf(unsigned int *seed, float3 n, float3 wo, float3* wr, float3* kd, float
           Material m, float* brdf, bool* transmitted) {
 
     int type = m.type;
-    /*float3 diff = *kd;
-    printf("(%f, %f, %f)", diff.x, diff.y, diff.z);*/
     if(type == 0) {
         diffuse_brdf(seed, n, wr);
     }
@@ -959,6 +957,8 @@ __kernel void intersection_kernel(__global unsigned char* finished, __global flo
 
     ray.inv_dir = native_recip(ray.dir);
 
+    rays[work_item_id] = ray;
+
     float t = 1e16f;
 
     int mtlidx = -1;
@@ -1019,10 +1019,9 @@ __kernel void shading_kernel(__global Ray* rays, __global unsigned char* finishe
 
         if(current_iteration > 3) {
             float p = max(throughput.x, max(throughput.y, throughput.z));
-            if(rand(seed) > p) {
-                finished[work_item_id] = true;
-                atomic_sub(win, 1);
-                mem_fence(CLK_GLOBAL_MEM_FENCE);
+            if(rand(&seed) > p) {
+                finished[work_item_id] = 1;
+                randoms[work_item_id] = seed;
                 return;
             }
 
@@ -1034,7 +1033,7 @@ __kernel void shading_kernel(__global Ray* rays, __global unsigned char* finishe
 
         bool thold = false;
 
-        bsdf(seed, normal, -1.0f * ray.dir, &wr, &kd, &ke, mtl, &brdf, &thold);
+        bsdf(&seed, normal, -1.0f * ray.dir, &wr, &kd, &ke, mtl, &brdf, &thold);
 
         accumbuffer[work_item_id] += throughput * ke;
 
@@ -1059,8 +1058,7 @@ __kernel void shading_kernel(__global Ray* rays, __global unsigned char* finishe
         } else {
             accumbuffer[work_item_id] += throughput * void_color;
         }
-        atomic_sub(win, 1);
-        mem_fence(CLK_GLOBAL_MEM_FENCE);
+        randoms[work_item_id] = seed;
         return;
     }
 
