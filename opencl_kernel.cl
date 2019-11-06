@@ -1071,36 +1071,16 @@ __kernel void shading_kernel(__global Ray* rays, __global unsigned char* finishe
     randoms[work_item_id] = seed;
 }
 
-/*
 
- This kernel is supposed to ensure the retired pixels are not in indices [0, get_global_size(0)) in actual_id
+__kernel void reassign_kernel(__global int* actual_id, __global unsigned char* finished, const int unit_size) {
 
- */
-__kernel void rmo_kernel(__global int* actual_id_temp, __global int* actual_id, 
-                         __global unsigned char* finished, const int totalsize) {
+    const int glob_id = get_global_id(0);
+    int i = glob_id * unit_size;
+    const int f = i + unit_size;
 
-    const int work_item_id = get_global_id(0);
-
-    const int maxVal = get_global_size(0);
-
-    int untilusage = work_item_id;
-
-    int i = 0;
-    int idx = actual_id[0];
-
-    while(idx < totalsize) {
-        if(finished[idx] == 0 && untilusage-- == 0) break;
-        idx = actual_id[++i];
+    for(; i < f; i++) {
+        if(!finished[i]);
     }
-    actual_id_temp[work_item_id] = idx;
-}
-
-
-__kernel void rmf_kernel(__global int* actual_id, __global int* actual_id_temp) {
-
-    const int work_item_id = get_global_id(0);
-
-    actual_id[work_item_id] = actual_id_temp[work_item_id];
     
 }
 

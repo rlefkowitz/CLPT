@@ -33,7 +33,7 @@ void initGL(int argc, char** argv){
 	// specify the initial window position
 	glutInitWindowPosition(50, 50);
 	// specify the initial window size
-	glutInitWindowSize(window_width, window_height);
+	glutInitWindowSize(window_width + 1, window_height);
 	// create the window and set title
 	glutCreateWindow("Basic OpenCL path tracer");
 

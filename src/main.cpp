@@ -17,6 +17,7 @@ using namespace std;
 using namespace cl;
 
 bool profiling = false;
+bool wavefront = false;
 
 const int samples = 2048;
 const int samplesPerRun = 1;
@@ -80,8 +81,6 @@ Kernel kernel;
 Kernel init_kernel;
 Kernel intersection_kernel;
 Kernel shading_kernel;
-Kernel rmo_kernel;
-Kernel rmf_kernel;
 Kernel final_kernel;
 Context context;
 Program program;
@@ -96,7 +95,6 @@ Buffer cl_rays;
 Buffer cl_randoms;
 Buffer cl_camera;
 Buffer cl_actualIDs;
-Buffer cl_actualIDsTemp;
 Buffer cl_finished;
 Buffer cl_points;
 Buffer cl_normals;
@@ -371,60 +369,51 @@ void createBufferValues() {
     
     voidcolor = (cl_float3) {{scn.background_color.x, scn.background_color.y, scn.background_color.z}};
 
-    cpu_finished = new cl_uchar[window_width * window_height];
-    cpu_actualIDs = new cl_int[window_width * window_height];
+    if(wavefront) {
+        cpu_finished = new cl_uchar[window_width * window_height];
+        cpu_actualIDs = new cl_int[window_width * window_height];
+    }
     
 }
 
 void writeBufferValues() {
     
-    // Create point buffer on the OpenCL device
-    cl_globalworkgroupsize = Buffer(context, CL_MEM_READ_ONLY | CL_MEM_ALLOC_HOST_PTR, sizeof(cl_uint));
-    global_work_group_size = (cl_uint *)queue.enqueueMapBuffer(cl_globalworkgroupsize, CL_TRUE, CL_MAP_WRITE, 0, sizeof(cl_uint));  
-    *global_work_group_size = 0;
-    queue.enqueueUnmapMemObject(cl_globalworkgroupsize, global_work_group_size); 
-    
-    cout << "Created global work group size buffer \n";
-    
-    // Create point buffer on the OpenCL device
-    cl_points = Buffer(context, CL_MEM_WRITE_ONLY, window_width * window_height * sizeof(cl_float3));
-    
-    cout << "Created point buffer \n";
-    
-    // Create normal buffer on the OpenCL device
-    cl_normals = Buffer(context, CL_MEM_WRITE_ONLY, window_width * window_height * sizeof(cl_float3));
-    
-    cout << "Created normal buffer \n";
-    
-    // Create throughput buffer on the OpenCL device
-    cl_throughputs = Buffer(context, CL_MEM_WRITE_ONLY, window_width * window_height * sizeof(cl_float3));
-    
-    cout << "Created throughput buffer \n";
-    
-    // Create actual ID buffer on the OpenCL device
-    cl_actualIDs = Buffer(context, CL_MEM_WRITE_ONLY, window_width * window_height * sizeof(cl_int));
-    
-    cout << "Created actual ID buffer \n";
-    
-    // Create actual ID temp buffer on the OpenCL device
-    cl_actualIDsTemp = Buffer(context, CL_MEM_WRITE_ONLY, window_width * window_height * sizeof(cl_int));
-    
-    cout << "Created actual ID temp buffer \n";
-    
-    // Create finished buffer on the OpenCL device
-    cl_finished = Buffer(context, CL_MEM_WRITE_ONLY, window_width * window_height * sizeof(cl_uchar));
-    
-    cout << "Created finished buffer \n";
-    
-    // Create material index buffer on the OpenCL device
-    cl_mtlidxs = Buffer(context, CL_MEM_WRITE_ONLY, window_width * window_height * sizeof(cl_int));
-    
-    cout << "Created material index buffer \n";
-    
-    // Create ray buffer on the OpenCL device
-    cl_rays = Buffer(context, CL_MEM_WRITE_ONLY, window_width * window_height * 3 * sizeof(cl_float3));
-    
-    cout << "Created ray buffer \n";
+    if(wavefront) {
+        // Create point buffer on the OpenCL device
+        cl_points = Buffer(context, CL_MEM_WRITE_ONLY, window_width * window_height * sizeof(cl_float3));
+        
+        cout << "Created point buffer \n";
+        
+        // Create normal buffer on the OpenCL device
+        cl_normals = Buffer(context, CL_MEM_WRITE_ONLY, window_width * window_height * sizeof(cl_float3));
+        
+        cout << "Created normal buffer \n";
+        
+        // Create throughput buffer on the OpenCL device
+        cl_throughputs = Buffer(context, CL_MEM_WRITE_ONLY, window_width * window_height * sizeof(cl_float3));
+        
+        cout << "Created throughput buffer \n";
+        
+        // Create actual ID buffer on the OpenCL device
+        cl_actualIDs = Buffer(context, CL_MEM_WRITE_ONLY, window_width * window_height * sizeof(cl_int));
+        
+        cout << "Created actual ID buffer \n";
+        
+        // Create finished buffer on the OpenCL device
+        cl_finished = Buffer(context, CL_MEM_WRITE_ONLY, window_width * window_height * sizeof(cl_uchar));
+        
+        cout << "Created finished buffer \n";
+        
+        // Create material index buffer on the OpenCL device
+        cl_mtlidxs = Buffer(context, CL_MEM_WRITE_ONLY, window_width * window_height * sizeof(cl_int));
+        
+        cout << "Created material index buffer \n";
+        
+        // Create ray buffer on the OpenCL device
+        cl_rays = Buffer(context, CL_MEM_WRITE_ONLY, window_width * window_height * 3 * sizeof(cl_float3));
+        
+        cout << "Created ray buffer \n";
+    }
     
     // Create useful nums buffer on the OpenCL device
     cl_usefulnums = Buffer(context, CL_MEM_READ_ONLY, 11 * sizeof(cl_uint));
@@ -584,31 +573,6 @@ void initShadingKernel() {
 }
 
 
-void initRmoKernel() {
-    
-    // Create a kernel (entry point in the OpenCL source program)
-    rmo_kernel = Kernel(program, "rmo_kernel");
-    
-    // specify OpenCL kernel arguments
-    rmo_kernel.setArg(0, cl_actualIDs);
-    rmo_kernel.setArg(1, cl_actualIDsTemp);
-    rmo_kernel.setArg(2, cl_finished);
-    rmo_kernel.setArg(3, window_width * window_height);
-
-}
-
-
-void initRmfKernel() {
-    
-    // Create a kernel (entry point in the OpenCL source program)
-    rmf_kernel = Kernel(program, "rmf_kernel");
-    
-    // specify OpenCL kernel arguments
-    rmf_kernel.setArg(0, cl_actualIDs);
-    rmf_kernel.setArg(1, cl_actualIDsTemp);
-
-}
-
 void initFinalKernel() {
     
     // Create a kernel (entry point in the OpenCL source program)
@@ -636,14 +600,6 @@ void initCLKernels() {
     initShadingKernel();
 
     cout << "Initialized Shading Kernel\n";
-
-    initRmoKernel();
-
-    cout << "Initialized Rm Kernel\n";
-
-    initRmfKernel();
-
-    cout << "Initialized Rmf Kernel\n";
 
     initFinalKernel();
 
@@ -684,30 +640,69 @@ void runKernels() {
     queue.enqueueAcquireGLObjects(&cl_vbos);
     queue.finish();
 
+    std::chrono::duration<double> elapsedinit;
+    std::chrono::duration<double> elapsedintersect;
+    std::chrono::duration<double> elapsedshading;
+    std::chrono::duration<double> elapsedreassign;
+    std::chrono::duration<double> elapsedfinish;
+
     // global_work_group_size = (cl_uint *)queue.enqueueMapBuffer(cl_globalworkgroupsize, CL_TRUE, CL_MAP_WRITE, 0, sizeof(cl_uint));  
     // global_work_group_size[0] = window_width * window_height;
     // queue.enqueueUnmapMemObject(cl_globalworkgroupsize, global_work_group_size); 
+
+    // Start timer
+    auto start = std::chrono::high_resolution_clock::now();
     
     // Launch init kernel
     queue.enqueueNDRangeKernel(init_kernel, NULL, global_work_size, local_work_size);
-    // queue.finish();
+    queue.finish();
+
+    // End timer
+    auto finish = std::chrono::high_resolution_clock::now();
+                
+    elapsedinit += finish - start;
+
     int bounces = 1500;
 
     for(int n = 0; n < bounces && global_work_size > 0; n++) {
 
+        // Start timer
+        start = std::chrono::high_resolution_clock::now();
+
         // Launch intersection kernel
         queue.enqueueNDRangeKernel(intersection_kernel, NULL, global_work_size, local_work_size);
-        // queue.finish();
+        queue.finish();
+
+        // End timer
+        finish = std::chrono::high_resolution_clock::now();
+                
+        elapsedintersect += finish - start;
+
+        // printf("Intersected %d pixels in %f s.\n", global_work_size, elapsed.count());
 
         shading_kernel.setArg(16, n);
+
+        // Start timer
+        start = std::chrono::high_resolution_clock::now();
 
         // Launch shading kernel
         queue.enqueueNDRangeKernel(shading_kernel, NULL, global_work_size, local_work_size);
         queue.finish();
 
+        // End timer
+        finish = std::chrono::high_resolution_clock::now();
+                
+        elapsedshading += finish - start;
+
+        // printf("Shaded %d pixels in %f s.\n", global_work_size, elapsed.count());
+
         // cout << *global_work_group_size << endl;
         // queue.finish();
         if(n < bounces - 1) {
+
+            // Start timer
+            start = std::chrono::high_resolution_clock::now();
+
             // Get working thread count
             // global_work_group_size = (cl_uint *)queue.enqueueMapBuffer(cl_globalworkgroupsize, CL_FALSE, CL_MAP_READ, 0, sizeof(cl_uint));
             // global_work_size = global_work_group_size[0];
@@ -716,124 +711,61 @@ void runKernels() {
             // queue.enqueueUnmapMemObject(cl_globalworkgroupsize, global_work_group_size);
 
             global_work_size = global_work_size_tmp;
+
             queue.enqueueReadBuffer(cl_finished, CL_FALSE, 0, global_work_size * sizeof(cl_uchar), cpu_finished);
 
             int global_work_size_old = global_work_size;
 
-            int i = 0;
-            int idx;
-            bool allthewayout = false;
-
-            // Start timer
-            auto start = std::chrono::high_resolution_clock::now();
+            // // Start timer
+            // auto start = std::chrono::high_resolution_clock::now();
             
             int currentpos = 0;
 
             queue.finish();
             if(n == 0 || global_work_size == window_width * window_height) {
-
-                while(i < global_work_size_old) {
-                    int in_a_row = 0;
-                    while(cpu_finished[i]) {
-                        in_a_row++;
-                        i++;
-                        if(i == global_work_size_old) {
-                            allthewayout = true;
-                            break;
-                        }
+                for(int i = 0; i < global_work_size_old; i++) {
+                    if(!cpu_finished[i]) {
+                        cpu_actualIDs[currentpos] = i;
+                        cpu_finished[currentpos++] = 0;
                     }
-                    global_work_size -= in_a_row;
-
-                    if(allthewayout) break;
-
-                    // if(in_a_row) {
-                    //     Shift ns(i, i - in_a_row - totalshift, in_a_row, global_work_size_old - i);
-                    //     if(shifts.size() > 0) {
-                    //         shifts[shifts.size() - 1].a -= ns.a + ns.s;
-                    //     }
-                    //     shifts.push_back(ns);
-                    //     totalshift += in_a_row;
-                    // }
-                    cpu_actualIDs[currentpos] = i;
-                    cpu_finished[currentpos] = cpu_finished[i];
-                    i++;
-                    currentpos++;
                 }
             } else {
-                // queue.enqueueReadBuffer(cl_actualIDs, CL_FALSE, 0, global_work_size * cl_int_size, cpu_actualIDs);
-
-                // std::vector<Shift> shifts;
-                // shifts.clear();
-                // int totalshift = 0;
-
-                while(i < global_work_size_old) {
-                    int in_a_row = 0;
-                    while(cpu_finished[i]) {
-                        in_a_row++;
-                        i++;
-                        if(i == global_work_size_old) {
-                            allthewayout = true;
-                            break;
-                        }
+                for(int i = 0; i < global_work_size_old; i++) {
+                    if(!cpu_finished[i]) {
+                        cpu_actualIDs[currentpos] = cpu_actualIDs[i];
+                        cpu_finished[currentpos++] = 0;
                     }
-                    global_work_size -= in_a_row;
-
-                    if(allthewayout) break;
-
-                    // if(in_a_row) {
-                    //     Shift ns(i, i - in_a_row - totalshift, in_a_row, global_work_size_old - i);
-                    //     if(shifts.size() > 0) {
-                    //         shifts[shifts.size() - 1].a -= ns.a + ns.s;
-                    //     }
-                    //     shifts.push_back(ns);
-                    //     totalshift += in_a_row;
-                    // }
-                    cpu_actualIDs[currentpos] = cpu_actualIDs[i];
-                    cpu_finished[currentpos] = cpu_finished[i];
-                    i++;
-                    currentpos++;
                 }
+            }
+            global_work_size = currentpos;
+
+            // if(global_work_size_old - global_work_size) {
+                queue.enqueueWriteBuffer(cl_finished, CL_FALSE, 0, global_work_size * sizeof(cl_uchar), cpu_finished);
+                queue.enqueueWriteBuffer(cl_actualIDs, CL_FALSE, 0, global_work_size * cl_int_size, cpu_actualIDs);
+
+                // // End timer
                 // auto finish = std::chrono::high_resolution_clock::now();
                 
                 // std::chrono::duration<double> elapsed = finish - start;
 
-                // printf("Identified %d shifts in %f s.\n", shifts.size(), elapsed.count());
-
-
-                // cout << "Shifting memory...\n";
-
-                // for(Shift s : shifts) {
-                //     // printf("Shifting %d indices from %d to %d.\n", s.a, s.i, s.f);
-                //     // queue.enqueueWriteBuffer(cl_actualIDs, CL_FALSE, s.f * cl_int_size, s.a * cl_int_size, cpu_actualIDs + s.i);
-                //     memmove(cpu_actualIDs + s.f, cpu_actualIDs + s.i, s.a * cl_int_size);
-                // }
-
-                // shifts.clear();
-
-                // cout << "Shifted memory.\n";
-            }
-
-
-            if(global_work_size_old - global_work_size) {
-                queue.enqueueWriteBuffer(cl_finished, CL_FALSE, 0, global_work_size * cl_int_size, cpu_finished);
-                queue.enqueueWriteBuffer(cl_actualIDs, CL_FALSE, 0, global_work_size * cl_int_size, cpu_actualIDs);
+                // printf("Killed %d threads and reindexed and wrote the remainder in %f s.\n", global_work_size_old - global_work_size, elapsed.count());
 
                 // Set global_work_size to kernel-computed value;
                 global_work_size_tmp = global_work_size;
-                local_work_size = init_kernel.getWorkGroupInfo<CL_KERNEL_WORK_GROUP_SIZE>(device);
+                local_work_size = 64;//init_kernel.getWorkGroupInfo<CL_KERNEL_WORK_GROUP_SIZE>(device);
 
                 // Ensure the global work size is a multiple of local work size
                 if(global_work_size % local_work_size != 0)
                     global_work_size = (global_work_size / local_work_size + 1) * local_work_size;
 
                 queue.finish();
-            }
-            // End timer
-            auto finish = std::chrono::high_resolution_clock::now();
-            
-            std::chrono::duration<double> elapsed = finish - start;
+                    
+            // }
 
-            printf("Killed %d threads and reindexed and wrote the remainder in %f s.\n", global_work_size_old - global_work_size, elapsed.count());
+            // End timer
+            finish = std::chrono::high_resolution_clock::now();
+
+            elapsedreassign += finish - start;
 
         }
 
@@ -846,14 +778,31 @@ void runKernels() {
     if (global_work_size % local_work_size != 0)
         global_work_size = (global_work_size / local_work_size + 1) * local_work_size;
 
+    // Start timer
+    start = std::chrono::high_resolution_clock::now();
+
     // Launch final kernel
     queue.enqueueNDRangeKernel(final_kernel, NULL, global_work_size, local_work_size);
     queue.finish();
+
+    // End timer
+    finish = std::chrono::high_resolution_clock::now();
+                
+    elapsedfinish += finish - start;
+
     // cout << global_work_group_size[0] << endl;
     
     //Release the VBOs so OpenGL can play with them
     queue.enqueueReleaseGLObjects(&cl_vbos);
     queue.finish();
+
+    printf("Frame complete: \n - Initialize: %f s\n - Intersection: %f s\n - Shading: %f s\n - Reassign: %f s\n - Finalize: %f s\n",
+           elapsedinit.count(),
+           elapsedintersect.count(),
+           elapsedshading.count(),
+           elapsedreassign.count(),
+           elapsedfinish.count()
+           );
     
 }
 
@@ -894,24 +843,33 @@ void render() {
     buffer_reset = false;
     framenumber++;
     
+    if(wavefront) {
+        cpu_actualIDs = new cl_int[window_width * window_height];
+        queue.enqueueFillBuffer(cl_actualIDs, CL_TRUE, 0, window_width * window_height * sizeof(cl_int));
+        queue.enqueueFillBuffer(cl_finished, CL_TRUE, 0, window_width * window_height * sizeof(cl_uchar));
+    }
     interactiveCamera->buildRenderCamera(cpu_camera);
-    cpu_actualIDs = new cl_int[window_width * window_height];
     queue.enqueueWriteBuffer(cl_camera, CL_TRUE, 0, sizeof(Camera), cpu_camera);
-    queue.enqueueFillBuffer(cl_actualIDs, CL_TRUE, 0, window_width * window_height * sizeof(cl_int));
-    queue.enqueueFillBuffer(cl_finished, CL_TRUE, 0, window_width * window_height * sizeof(cl_uchar));
     queue.finish();
     
-    // kernel.setArg(11, cl_camera);
-    // kernel.setArg(12, framenumber - 1);
-    init_kernel.setArg(4, cl_camera);
-    final_kernel.setArg(4, framenumber - 1);
+    if(wavefront) {
+        init_kernel.setArg(4, cl_camera);
+        final_kernel.setArg(4, framenumber - 1);
+    }
+    else {
+        kernel.setArg(11, cl_camera);
+        kernel.setArg(12, framenumber - 1);
+    }
     
-    // cout << "Running kernel...\n";
+    // cout << "Running kernels...\n";
 
-    // runKernel();
-    runKernels();
+    if(wavefront)
+        runKernels();
+    else
+        runKernel();
 
-    // cout << "Ran kernel.\n";
+    // cout << "Ran kernels.\n";
+	glutPostRedisplay();
     
     drawGL();
     
@@ -981,8 +939,10 @@ int main(int argc, char** argv){
     cout << "Buffer values written \n";
     
     // intitialize the kernel
-    // initCLKernel();
-    initCLKernels();
+    if(wavefront)
+        initCLKernels();
+    else
+        initCLKernel();
     
     cout << "CL Kernel initialized \n";
     
