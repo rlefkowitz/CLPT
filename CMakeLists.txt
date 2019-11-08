@@ -2,7 +2,7 @@ CMAKE_MINIMUM_REQUIRED ( VERSION 2.8 )
 
 PROJECT ( CLPath-V0.0.1 )
 
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++11")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++17 -pthread")
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -framework OpenCL")
 
 #########################################################
@@ -46,6 +46,7 @@ SET ( CLPATH_SOURCE
 SET ( CLPATH_HEADERS
   Src/bvh.h
   src/camera.h
+  src/chunk.h
   src/cl_gl_interop.h
   src/configloader.h
   src/hdrloader/hdrloader.h

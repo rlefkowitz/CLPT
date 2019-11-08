@@ -1,6 +1,7 @@
 #pragma once
 
 #include "primitives.h"
+#include <algorithm>
 
 using namespace std;
 
@@ -147,7 +148,7 @@ void build(vector<BVHNode> &bvh, vector<Triangle> &triangles, vector<Triangle> &
 //        cout << tris.size() << endl;
         node.isLeaf = 1;
         
-        sort(tris.begin(), tris.end(), greater<Triangle>());
+        std::sort(tris.begin(), tris.end(), greater<Triangle>());
         
         node.child1 = flatTriangles.size();
         flatTriangles.insert(flatTriangles.end(), tris.begin(), tris.end());
@@ -201,7 +202,7 @@ void build(vector<BVHNode> &bvh, vector<Triangle> &triangles, vector<Triangle> &
     
     bvhaxis = axis;
     
-    sort(tris.begin(), tris.end());
+    std::sort(tris.begin(), tris.end());
     
     right_tris.insert(right_tris.end(), tris.begin(), tris.end());
     
@@ -268,7 +269,7 @@ void build(vector<BVHNode> &bvh, vector<Triangle> &triangles, vector<Triangle> &
     if(bs.axis == -1) {
         node.isLeaf = 1;
         
-        sort(tris.begin(), tris.end(), greater<Triangle>());
+        std::sort(tris.begin(), tris.end(), greater<Triangle>());
         
         node.child1 = flatTriangles.size();
         flatTriangles.insert(flatTriangles.end(), tris.begin(), tris.end());
