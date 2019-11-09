@@ -90,6 +90,8 @@ Kernel shading_kernel;
 Kernel shadingfp_kernel;
 Kernel reassign_kernel;
 Kernel reassignfp_kernel;
+Kernel shift_kernel;
+Kernel shift_kernel_alt;
 Kernel final_kernel;
 Context context;
 Program program;
@@ -100,10 +102,12 @@ Buffer cl_mediums;
 
 Buffer cl_globalworkgroupsize;
 Buffer cl_chunks;
+Buffer cl_chunks_new;
 Buffer cl_rays;
 Buffer cl_randoms;
 Buffer cl_camera;
 Buffer cl_actualIDs;
+Buffer cl_actualIDs_new;
 Buffer cl_finished;
 Buffer cl_points;
 Buffer cl_normals;
@@ -497,7 +501,7 @@ void writeBufferValues() {
     
 }
 
-void initCLKernel(){
+void initCLKernel() {
     
     // Create the kernel
     kernel = Kernel(program, "render_kernel");
@@ -639,6 +643,25 @@ void initReassignKernels() {
 }
 
 
+void initShiftKernels() {
+    
+    // Create a kernel (entry point in the OpenCL source program)
+    shift_kernel = Kernel(program, "shift_kernel");
+    shift_kernel_alt = Kernel(program, "shift_kernel");
+    
+    // specify OpenCL kernel arguments
+    shift_kernel.setArg(0, cl_actualIDs);
+    shift_kernel.setArg(1, cl_actualIDs_new);
+    shift_kernel.setArg(2, cl_chunks);
+    shift_kernel.setArg(3, cl_chunks_new);
+
+    shift_kernel_alt.setArg(0, cl_actualIDs_new);
+    shift_kernel_alt.setArg(1, cl_actualIDs);
+    shift_kernel_alt.setArg(2, cl_chunks_new);
+    shift_kernel_alt.setArg(3, cl_chunks);
+}
+
+
 void initFinalKernel() {
     
     // Create a kernel (entry point in the OpenCL source program)
@@ -708,7 +731,8 @@ void runKernels() {
     
     // Launch init kernel
     queue.enqueueNDRangeKernel(init_kernel, NULL, global_work_size, local_work_size);
-    // queue.finish();
+    queue.flush();
+    queue.finish();
 
     // // End timer
     // auto finish = std::chrono::high_resolution_clock::now();
@@ -727,7 +751,8 @@ void runKernels() {
         if(firstpass) {
             // Launch intersection kernel
             queue.enqueueNDRangeKernel(intersectionfp_kernel, NULL, global_work_size, local_work_size);
-            // queue.finish();
+            queue.flush();
+            queue.finish();
 
             // End timer
             // finish = std::chrono::high_resolution_clock::now();
@@ -741,11 +766,13 @@ void runKernels() {
 
             // Launch shading kernel
             queue.enqueueNDRangeKernel(shadingfp_kernel, NULL, global_work_size, local_work_size);
+            queue.flush();
         }
         else {
             // Launch intersection kernel
             queue.enqueueNDRangeKernel(intersection_kernel, NULL, global_work_size, local_work_size);
-            // queue.finish();
+            queue.flush();
+            queue.finish();
 
             // End timer
             // finish = std::chrono::high_resolution_clock::now();
@@ -759,8 +786,9 @@ void runKernels() {
 
             // Launch shading kernel
             queue.enqueueNDRangeKernel(shading_kernel, NULL, global_work_size, local_work_size);
+            queue.flush();
         }
-        // queue.finish();
+        queue.finish();
 
         // // End timer
         // finish = std::chrono::high_resolution_clock::now();
@@ -783,14 +811,14 @@ void runKernels() {
             
             int total_size = global_work_size;
 
-            if(total_size >= 512 * 8) {
+            if(total_size >= 512 * 4) {
 
                 // // Start timer
                 // auto start2 = std::chrono::high_resolution_clock::now();
 
-                std::size_t local_thread_count = 8;
+                std::size_t local_thread_count = 1;
 
-                int thread_count = 1024;
+                int thread_count = 512;
                 int unit_size = (int) ceil(((float) total_size) / ((float) thread_count));
                 // if(total_size % thread_count != 0) 
                 //     unit_size += 1;
@@ -803,6 +831,8 @@ void runKernels() {
 
                 if(reassign_work_size % local_thread_count != 0) 
                     reassign_work_size = (reassign_work_size / local_thread_count + 1) * local_thread_count;
+
+                auto start2 = std::chrono::high_resolution_clock::now();
                 
                 if(firstpass) {
                     reassignfp_kernel.setArg(3, total_size);
@@ -814,37 +844,44 @@ void runKernels() {
                     reassign_kernel.setArg(4, unit_size);
                     queue.enqueueNDRangeKernel(reassign_kernel, NULL, reassign_work_size, local_thread_count);
                 }
-                // queue.finish();
+                queue.flush();
+                queue.finish();
+                // End timer
+                auto finish2 = std::chrono::high_resolution_clock::now();
 
+                std::chrono::duration<double> elapsed = finish2 - start2;
+
+                printf("Computed %d chunks in %f s.\n", chunk_amt, elapsed.count());
+
+                start2 = std::chrono::high_resolution_clock::now();
                 queue.enqueueReadBuffer(cl_chunks, CL_TRUE, 0, chunk_amt * sizeof(Chunk), cpu_chunks);
 
                 Shift *shifts = new Shift[chunk_amt - 1];
-                Chunk curr_chunk = cpu_chunks[0];
-                Chunk next_chunk;
                 int offset = 0;
-                int nzshifts = -1;
-                int readfrom = 0;
-                int writeto = 0;
-                int offatread = 0;
+                int nzshifts = 0;//-1;
+                Chunk next_chunk;
+                queue.finish();
+                Chunk curr_chunk = cpu_chunks[0];
+                // int readfrom = 0;
+                // int writeto = 0;
                 for(int i = 1; i < chunk_amt; i++) {
                     next_chunk = cpu_chunks[i];
                     int moving = next_chunk.i - curr_chunk.f;
                     if(moving > 0) {
-                        if(nzshifts < 0) {
-                            readfrom = curr_chunk.f;
-                            offatread = offset + curr_chunk.f - curr_chunk.i;
-                            queue.enqueueReadBuffer(cl_actualIDs, CL_FALSE, readfrom, (global_work_size - readfrom) * cl_int_size, cpu_actualIDs);
-                            readfrom -= offset + curr_chunk.f - curr_chunk.i;
-                        }
-                        else {
-                            shifts[nzshifts] = Shift(curr_chunk.i - offset - readfrom, curr_chunk.f - readfrom, moving * cl_int_size);
-                        }
+                        // if(nzshifts < 0) {
+                        //     readfrom = curr_chunk.f;
+                        //     queue.enqueueReadBuffer(cl_actualIDs, CL_FALSE, readfrom * cl_int_size, (global_work_size - readfrom) * cl_int_size, cpu_actualIDs);
+                        // }
+                        // else {
+                        //     shifts[nzshifts] = Shift(curr_chunk.i - offset - writeto, curr_chunk.f - readfrom, moving * cl_int_size);
+                        // }
+                            shifts[nzshifts] = Shift(curr_chunk.i - offset, curr_chunk.f, moving * cl_int_size);
                         nzshifts++;
                     }
                     int size = curr_chunk.f - curr_chunk.i;
-                    if(offset == 0 && size > 0) {
-                        writeto = curr_chunk.i;
-                    }
+                    // if(offset == 0 && size > 0) {
+                    //     writeto = curr_chunk.i;
+                    // }
                     offset += size;
                     curr_chunk = next_chunk;
                 }
@@ -853,15 +890,14 @@ void runKernels() {
 
                 if(offset > 0) {
                     if(global_work_size == offset) break;
-                    // queue.enqueueReadBuffer(cl_actualIDs, CL_TRUE, 0, global_work_size * cl_int_size, cpu_actualIDs);
+                    queue.enqueueReadBuffer(cl_actualIDs, CL_TRUE, 0, global_work_size * cl_int_size, cpu_actualIDs);
                     global_work_size -= offset;
-
-                    // auto start2 = std::chrono::high_resolution_clock::now();
 
                     // cl_int *naids = new cl_int[global_work_size];
                     // memcpy(naids, cpu_actualIDs, cpu_chunks[0].i * cl_int_size);
                     // thread *threads = new thread[nzshifts];
                     Shift s;
+                    queue.finish();
                     for(int i = 0; i < nzshifts; i++) {
                         s = shifts[i];
                         memmove(cpu_actualIDs + s.dst, cpu_actualIDs + s.src, s.size);
@@ -873,17 +909,18 @@ void runKernels() {
                     //         threads[i].join();
                     // }
 
-                    // End timer
-                    // auto finish2 = std::chrono::high_resolution_clock::now();
-
-                    // std::chrono::duration<double> elapsed = finish2 - start2;
-
-                    // printf("Executed %d threads in %f s.\n", thread_count, elapsed.count());
                     
                     queue.enqueueFillBuffer(cl_finished, 0, 0, global_work_size * sizeof(cl_uchar));
-                    queue.enqueueWriteBuffer(cl_actualIDs, CL_TRUE, writeto, (global_work_size - writeto) * cl_int_size, cpu_actualIDs);
-                    // queue.finish();
+                    // queue.enqueueWriteBuffer(cl_actualIDs, CL_TRUE, writeto * cl_int_size, (global_work_size - writeto) * cl_int_size, cpu_actualIDs);
+                    queue.enqueueWriteBuffer(cl_actualIDs, CL_TRUE, cl_int_size, global_work_size * cl_int_size, cpu_actualIDs);
+                    queue.finish();
                 }
+                
+                finish2 = std::chrono::high_resolution_clock::now();
+
+                elapsed = finish2 - start2;
+
+                printf("Did the rest in %f s.\n", chunk_amt, elapsed.count());
 
                 // // End timer
                 // auto finish = std::chrono::high_resolution_clock::now();
@@ -896,12 +933,13 @@ void runKernels() {
             else {
 
                 queue.enqueueReadBuffer(cl_finished, CL_TRUE, 0, global_work_size * sizeof(cl_uchar), cpu_finished);
-                // queue.finish();
+                // queue.enqueueReadBuffer(cl_actualIDs, CL_TRUE, 0, global_work_size * cl_int_size, cpu_actualIDs);
 
                 int global_work_size_old = global_work_size;
                 
                 int currentpos = 0;
 
+                queue.finish();
                 if(firstpass) {
                     for(int i = 0; i < global_work_size_old; i++) {
                         if(!cpu_finished[i]) {
@@ -923,7 +961,7 @@ void runKernels() {
                     if(global_work_size == 0) break;
                     queue.enqueueWriteBuffer(cl_finished, CL_TRUE, 0, global_work_size * sizeof(cl_uchar), cpu_finished);
                     queue.enqueueWriteBuffer(cl_actualIDs, CL_TRUE, 0, global_work_size * cl_int_size, cpu_actualIDs);
-                    // queue.finish();
+                    queue.finish();
                 }
 
                 // Set global_work_size to kernel-computed value;
@@ -964,7 +1002,7 @@ void runKernels() {
 
     // Launch final kernel
     queue.enqueueNDRangeKernel(final_kernel, NULL, global_work_size, local_work_size);
-    // queue.finish();
+    queue.finish();
 
     // // End timer
     // finish = std::chrono::high_resolution_clock::now();
@@ -1021,7 +1059,7 @@ void runKernel(){
 
 void render() {
 
-    if (buffer_reset){
+    if (buffer_reset) {
         float arg = 0;
         queue.enqueueFillBuffer(cl_accumbuffer, arg, 0, window_width * window_height * sizeof(cl_float3));
         framenumber = 0;
@@ -1037,7 +1075,6 @@ void render() {
     }
     interactiveCamera->buildRenderCamera(cpu_camera);
     queue.enqueueWriteBuffer(cl_camera, CL_TRUE, 0, sizeof(Camera), cpu_camera);
-    queue.finish();
     
     if(wavefront) {
         init_kernel.setArg(4, cl_camera);
@@ -1047,6 +1084,8 @@ void render() {
         kernel.setArg(11, cl_camera);
         kernel.setArg(12, framenumber - 1);
     }
+
+    queue.finish();
     
     // cout << "Running kernels...\n";
 
@@ -1054,9 +1093,6 @@ void render() {
         runKernels();
     else
         runKernel();
-
-    // cout << "Ran kernels.\n";
-	glutPostRedisplay();
     
     drawGL();
     

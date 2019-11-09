@@ -1115,6 +1115,24 @@ __kernel void reassign_kernel(__global int* actual_id, __global uchar* finished,
 }
 
 
+__kernel void shift_kernel(__global int* actual_id, __global int* actual_id_new, __global Chunk* chunks, __global Chunk* chunks_new) {
+
+    int work_item_id = get_global_id(0);
+    Chunk curr = chunks[work_item_id << 1];
+    Chunk next = chunks[work_item_id << 1 + 1];
+
+    int dst = curr.i;
+    int src = curr.f;
+    int endread = next.i;
+    
+    while(src < endread) 
+        actual_id_new[dst++] = actual_id[src++];
+
+    chunks_new[work_item_id] = (Chunk) {src, next.f};
+    
+}
+
+
 __kernel void intersectionfp_kernel(__global unsigned char* finished, __global float3* points, __global float3* normals, 
                                     __global int* materials, __global Ray* rays, __global Sphere* spheres, 
                                     __global Triangle* triangles, __global BVHNode* nodes, const int sphere_amt, 

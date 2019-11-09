@@ -2,7 +2,7 @@ CMAKE_MINIMUM_REQUIRED ( VERSION 2.8 )
 
 PROJECT ( CLPath-V0.0.1 )
 
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++17 -pthread")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++17 -pthread -lglew -L/opt/local/lib")
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -framework OpenCL")
 
 #########################################################

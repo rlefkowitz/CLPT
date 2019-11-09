@@ -16,3 +16,10 @@ iblPath res/Frozen_Waterfall_Ref.hdr
 material sponzaMat diffuse 0.9 0.9 0.9
 
 mesh sponza 10 0 5 0.25 0.25 0.25 sponzaMat
+
+ # create a gold material
+set vec3 gold_n 0.35067 0.53695 1.4482
+set vec3 gold_k 2.5095 2.1518 1.7983
+material gold metal gold_n gold_k 0.103
+
+ # mesh dragon 12 0 5 0.1 0.1 0.1 gold

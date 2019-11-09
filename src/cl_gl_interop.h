@@ -35,7 +35,7 @@ void initGL(int argc, char** argv){
 	// specify the initial window size
 	glutInitWindowSize(window_width + 1, window_height);
 	// create the window and set title
-	glutCreateWindow("Basic OpenCL path tracer");
+	glutCreateWindow("CLPT");
 
 	// register GLUT callback function to display graphics:
 	glutDisplayFunc(render);
@@ -47,7 +47,9 @@ void initGL(int argc, char** argv){
     glutMotionFunc(motion);
 
     // initialise OpenGL extensions
-//    glewInit();
+  	#ifndef __APPLE__
+	glewInit();
+	#endif
 
 	// initialise OpenGL
 	glClearColor(0.0, 0.0, 0.0, 1.0);

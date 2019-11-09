@@ -87,7 +87,7 @@ void motion(int x, int y)
             lastX = x;
             lastY = y;
             buffer_reset = true;
-//            glutPostRedisplay();
+            // glutPostRedisplay();
             
         }
     }
