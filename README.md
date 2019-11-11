@@ -24,8 +24,9 @@ The scene `clpt.clpt` (1280x640, 51,000+ SPP), rendered in just over an hour.
 - GGX Plastic
 - GGX Dielectric/Glass
 - Mirror
+- Metals
 
-\**all materials can be emissive*
+\**all materials (excluding metals) can be emissive*
 
 \**all materials can use a homogenous Isotropic Scattering Medium (only transparent materials will be affected, however)*
 
@@ -111,7 +112,7 @@ Further optimizations could be implemented to improve the speed and efficiency o
   - Local memory has been shown to be accessible up to 100x faster than global memory, though is certainly limited in size
 - Reduce Idle Threads
   - It is likely that with local group sizes larger than several pixels, many threads will escape the scene early or terminate early due to Russian Roulette
-    - As a result, these threads are idling, which will worsen the consequences of execution divergence
+     - As a result, these threads are idling, which will worsen the consequences of execution divergence
     
 #### Should explore Wavefront Path Tracing (Laine et al. 2013)
 - Better streamlines the path tracing pipeline for GPU usage
