@@ -129,14 +129,14 @@ void pickPlatform(Platform& platform, const vector<Platform>& platforms){
     if (platforms.size() == 1) platform = platforms[0];
     else{
         int input = 0;
-        cout << "\nChoose an OpenCL platform: ";
+        std::cout << "\nChoose an OpenCL platform: ";
         cin >> input;
         
         // handle incorrect user input
         while (input < 1 || input > platforms.size()){
             cin.clear(); //clear errors/bad flags on cin
             cin.ignore(cin.rdbuf()->in_avail(), '\n'); // ignores exact number of chars in cin buffer
-            cout << "No such option. Choose an OpenCL platform: ";
+            std::cout << "No such option. Choose an OpenCL platform: ";
             cin >> input;
         }
         platform = platforms[input - 1];
@@ -148,14 +148,14 @@ void pickDevice(Device& device, const vector<Device>& devices){
     if (devices.size() == 1) device = devices[0];
     else{
         int input = 0;
-        cout << "\nChoose an OpenCL device: ";
+        std::cout << "\nChoose an OpenCL device: ";
         cin >> input;
         
         // handle incorrect user input
         while (input < 1 || input > devices.size()){
             cin.clear(); //clear errors/bad flags on cin
             cin.ignore(cin.rdbuf()->in_avail(), '\n'); // ignores exact number of chars in cin buffer
-            cout << "No such option. Choose an OpenCL device: ";
+            std::cout << "No such option. Choose an OpenCL device: ";
             cin >> input;
         }
         device = devices[input - 1];
@@ -171,7 +171,7 @@ void printErrorLog(const Program& program, const Device& device) {
     // Print the error log to a file
     FILE *log = fopen("errorlog.txt", "w");
     fprintf(log, "%s\n", buildlog.c_str());
-    cout << "Error log saved in 'errorlog.txt'" << endl;
+    std::cout << "Error log saved in 'errorlog.txt'" << endl;
     system("PAUSE");
     exit(1);
 }
@@ -181,31 +181,31 @@ void initOpenCL()
     // Get all available OpenCL platforms (e.g. AMD OpenCL, Nvidia CUDA, Intel OpenCL)
     vector<Platform> platforms;
     Platform::get(&platforms);
-    cout << "Available OpenCL platforms : " << endl << endl;
+    std::cout << "Available OpenCL platforms : " << endl << endl;
     for (int i = 0; i < platforms.size(); i++)
-    cout << "\t" << i + 1 << ": " << platforms[i].getInfo<CL_PLATFORM_NAME>() << endl;
+    std::cout << "\t" << i + 1 << ": " << platforms[i].getInfo<CL_PLATFORM_NAME>() << endl;
     
     // Pick one platform
     Platform platform;
     pickPlatform(platform, platforms);
-    cout << "\nUsing OpenCL platform: \t" << platform.getInfo<CL_PLATFORM_NAME>() << endl;
+    std::cout << "\nUsing OpenCL platform: \t" << platform.getInfo<CL_PLATFORM_NAME>() << endl;
     
     // Get available OpenCL devices on platform
     vector<Device> devices;
     platform.getDevices(CL_DEVICE_TYPE_ALL, &devices);
     
-    cout << "Available OpenCL devices on this platform: " << endl << endl;
+    std::cout << "Available OpenCL devices on this platform: " << endl << endl;
     for (int i = 0; i < devices.size(); i++){
-        cout << "\t" << i + 1 << ": " << devices[i].getInfo<CL_DEVICE_NAME>() << endl;
-        cout << "\t\tMax compute units: " << devices[i].getInfo<CL_DEVICE_MAX_COMPUTE_UNITS>() << endl;
-        cout << "\t\tMax work group size: " << devices[i].getInfo<CL_DEVICE_MAX_WORK_GROUP_SIZE>() << endl << endl;
+        std::cout << "\t" << i + 1 << ": " << devices[i].getInfo<CL_DEVICE_NAME>() << endl;
+        std::cout << "\t\tMax compute units: " << devices[i].getInfo<CL_DEVICE_MAX_COMPUTE_UNITS>() << endl;
+        std::cout << "\t\tMax work group size: " << devices[i].getInfo<CL_DEVICE_MAX_WORK_GROUP_SIZE>() << endl << endl;
     }
     
     // Pick one device
     pickDevice(device, devices);
-    cout << "\nUsing OpenCL device: \t" << device.getInfo<CL_DEVICE_NAME>() << endl;
-    cout << "\t\t\tMax compute units: " << device.getInfo<CL_DEVICE_MAX_COMPUTE_UNITS>() << endl;
-    cout << "\t\t\tMax work group size: " << device.getInfo<CL_DEVICE_MAX_WORK_GROUP_SIZE>() << endl;
+    std::cout << "\nUsing OpenCL device: \t" << device.getInfo<CL_DEVICE_NAME>() << endl;
+    std::cout << "\t\t\tMax compute units: " << device.getInfo<CL_DEVICE_MAX_COMPUTE_UNITS>() << endl;
+    std::cout << "\t\t\tMax work group size: " << device.getInfo<CL_DEVICE_MAX_WORK_GROUP_SIZE>() << endl;
     
     // Create an OpenCL context on that device.
     // Windows specific OpenCL-OpenGL interop
@@ -220,19 +220,19 @@ void initOpenCL()
     
     // Create a command queue
     context = Context(device, properties);
-    cout << "Created context\n";
+    std::cout << "Created context\n";
     if(profiling) {
         queue = CommandQueue(context, device, CL_QUEUE_PROFILING_ENABLE);
     } else {
         queue = CommandQueue(context, device);
     }
-    cout << "Created queue\n";
+    std::cout << "Created queue\n";
     
     // Convert the OpenCL source code to a string// Convert the OpenCL source code to a string
     string source;
     ifstream file("opencl_kernel.cl");
     if (!file){
-        cout << "\nNo OpenCL file found!" << endl << "Exiting..." << endl;
+        std::cout << "\nNo OpenCL file found!" << endl << "Exiting..." << endl;
         system("PAUSE");
         exit(1);
     }
@@ -246,12 +246,12 @@ void initOpenCL()
     
     // Create an OpenCL program with source
     program = Program(context, kernel_source);
-    cout << "Created program\n";
+    std::cout << "Created program\n";
     
     // Build the program for the selected device
     cl_int result = program.build({ device }); // "-cl-fast-relaxed-math"
-    cout << "Built program on device\n";
-    if (result) cout << "Error during compilation OpenCL code!!!\n (" << result << ")" << endl;
+    std::cout << "Built program on device\n";
+    if (result) std::cout << "Error during compilation OpenCL code!!!\n (" << result << ")" << endl;
     if (result == CL_BUILD_PROGRAM_FAILURE) printErrorLog(program, device);
     
 }
@@ -343,7 +343,7 @@ void createBufferValues() {
     
     // IBL Loading
     string ibl_src_str = scn.iblPath;
-    cout << ibl_src_str << endl;
+    std::cout << ibl_src_str << endl;
     const char* ibl_src = ibl_src_str.c_str();
     
     HDRLoaderResult result;
@@ -396,108 +396,108 @@ void writeBufferValues() {
         // Create point buffer on the OpenCL device
         cl_points = Buffer(context, CL_MEM_WRITE_ONLY, window_width * window_height * sizeof(cl_float3));
         
-        cout << "Created point buffer \n";
+        std::cout << "Created point buffer \n";
         
         // Create normal buffer on the OpenCL device
         cl_normals = Buffer(context, CL_MEM_WRITE_ONLY, window_width * window_height * sizeof(cl_float3));
         
-        cout << "Created normal buffer \n";
+        std::cout << "Created normal buffer \n";
         
         // Create throughput buffer on the OpenCL device
         cl_throughputs = Buffer(context, CL_MEM_WRITE_ONLY, window_width * window_height * sizeof(cl_float3));
         
-        cout << "Created throughput buffer \n";
+        std::cout << "Created throughput buffer \n";
         
         // Create actual ID buffer on the OpenCL device
         cl_actualIDs = Buffer(context, CL_MEM_READ_WRITE, window_width * window_height * sizeof(cl_int));
         
-        cout << "Created actual ID buffer \n";
+        std::cout << "Created actual ID buffer \n";
         
         // Create finished buffer on the OpenCL device
         cl_finished = Buffer(context, CL_MEM_READ_WRITE, window_width * window_height * sizeof(cl_uchar));
         
-        cout << "Created finished buffer \n";
+        std::cout << "Created finished buffer \n";
         
         // Create material index buffer on the OpenCL device
         cl_mtlidxs = Buffer(context, CL_MEM_WRITE_ONLY, window_width * window_height * sizeof(cl_int));
         
-        cout << "Created material index buffer \n";
+        std::cout << "Created material index buffer \n";
         
         // Create ray buffer on the OpenCL device
         cl_rays = Buffer(context, CL_MEM_WRITE_ONLY, window_width * window_height * 3 * sizeof(cl_float3));
         
-        cout << "Created ray buffer \n";
+        std::cout << "Created ray buffer \n";
         
         // Create ray buffer on the OpenCL device
         cl_chunks = Buffer(context, CL_MEM_WRITE_ONLY, 2048 * sizeof(Chunk));
         
-        cout << "Created chunk buffer \n";
+        std::cout << "Created chunk buffer \n";
     }
     
     // Create useful nums buffer on the OpenCL device
     cl_usefulnums = Buffer(context, CL_MEM_READ_ONLY, 11 * sizeof(cl_uint));
     queue.enqueueWriteBuffer(cl_usefulnums, CL_TRUE, 0, 11 * sizeof(cl_uint), cpu_usefulnums);
     
-    cout << "Wrote useful numbers \n";
+    std::cout << "Wrote useful numbers \n";
     
     // Create random buffer on the OpenCL device
     cl_randoms = Buffer(context, CL_MEM_READ_WRITE, window_width * window_height * sizeof(cl_uint));
     queue.enqueueWriteBuffer(cl_randoms, CL_TRUE, 0, window_width * window_height * sizeof(cl_uint), cpu_randoms);
     
-    cout << "Wrote randoms \n";
+    std::cout << "Wrote randoms \n";
     
     // Create ibl buffer on the OpenCL device
     cl_ibl = Buffer(context, CL_MEM_READ_ONLY, ibl_width * ibl_height * sizeof(cl_float3));
     queue.enqueueWriteBuffer(cl_ibl, CL_TRUE, 0, ibl_width * ibl_height * sizeof(cl_float3), cpu_ibl);
     
-    cout << "Wrote IbL \n";
+    std::cout << "Wrote IbL \n";
     
     // Create sphere buffer on the OpenCL device
     cl_spheres = Buffer(context, CL_MEM_READ_ONLY, sphere_amt * sizeof(Sphere));
     queue.enqueueWriteBuffer(cl_spheres, CL_TRUE, 0, sphere_amt * sizeof(Sphere), cpu_spheres);
     
-    cout << "Wrote spheres \n";
+    std::cout << "Wrote spheres \n";
     
     // Create triangle buffer on the OpenCL device
     cl_triangles = Buffer(context, CL_MEM_READ_ONLY, triangle_amt * sizeof(Triangle));
     queue.enqueueWriteBuffer(cl_triangles, CL_TRUE, 0, triangle_amt * sizeof(Triangle), cpu_triangles);
     
-    cout << "Wrote triangles \n";
+    std::cout << "Wrote triangles \n";
     
     // Create BVH node buffer on the OpenCL device
     cl_nodes = Buffer(context, CL_MEM_READ_ONLY, bvhnode_amt * sizeof(BVHNode));
     queue.enqueueWriteBuffer(cl_nodes, CL_TRUE, 0, bvhnode_amt * sizeof(BVHNode), cpu_bvhs);
     
-    cout << "Wrote BVH \n";
+    std::cout << "Wrote BVH \n";
     
     // Create material buffer on the OpenCL device
     cl_materials = Buffer(context, CL_MEM_READ_ONLY, material_amt * sizeof(Material));
     queue.enqueueWriteBuffer(cl_materials, CL_TRUE, 0, material_amt * sizeof(Material), cpu_materials);
     
-    cout << "Wrote materials \n";
+    std::cout << "Wrote materials \n";
     
     // Create medium buffer on the OpenCL device
     cl_mediums = Buffer(context, CL_MEM_READ_ONLY, medium_amt * sizeof(Medium));
     queue.enqueueWriteBuffer(cl_mediums, CL_TRUE, 0, medium_amt * sizeof(Medium), cpu_mediums);
     
-    cout << "Wrote mediums \n";
+    std::cout << "Wrote mediums \n";
     
     // Create camera buffer on the OpenCL device
     cl_camera = Buffer(context, CL_MEM_READ_ONLY, sizeof(Camera));
     queue.enqueueWriteBuffer(cl_camera, CL_TRUE, 0, sizeof(Camera), cpu_camera);
     
-    cout << "Wrote camera \n";
+    std::cout << "Wrote camera \n";
     
     // create OpenCL buffer from OpenGL vertex buffer object
     cl_vbo = BufferGL(context, CL_MEM_WRITE_ONLY, vbo);
     cl_vbos.push_back(cl_vbo);
     
-    cout << "Wrote VBO \n";
+    std::cout << "Wrote VBO \n";
     
     // reserve memory buffer on OpenCL device to hold image buffer for accumulated samples
     cl_accumbuffer = Buffer(context, CL_MEM_WRITE_ONLY, window_width * window_height * sizeof(cl_float3));
     
-    cout << "Created accumbuffer \n";
+    std::cout << "Created accumbuffer \n";
     
 }
 
@@ -680,23 +680,23 @@ void initCLKernels() {
 
     initInitKernel();
 
-    cout << "Initialized Init Kernel\n";
+    std::cout << "Initialized Init Kernel\n";
 
     initIntersectionKernels();
 
-    cout << "Initialized Intersection Kernels\n";
+    std::cout << "Initialized Intersection Kernels\n";
 
     initShadingKernels();
 
-    cout << "Initialized Shading Kernels\n";
+    std::cout << "Initialized Shading Kernels\n";
 
     initReassignKernels();
 
-    cout << "Initialized Reassign Kernels\n";
+    std::cout << "Initialized Reassign Kernels\n";
 
     initFinalKernel();
 
-    cout << "Initialized Final Kernel\n";
+    std::cout << "Initialized Final Kernel\n";
 
 }
 
@@ -732,7 +732,7 @@ void runKernels() {
     // Launch init kernel
     queue.enqueueNDRangeKernel(init_kernel, NULL, global_work_size, local_work_size);
     queue.flush();
-    queue.finish();
+    // queue.finish();
 
     // // End timer
     // auto finish = std::chrono::high_resolution_clock::now();
@@ -748,18 +748,19 @@ void runKernels() {
         // // Start timer
         // start = std::chrono::high_resolution_clock::now();
 
+        shadingfp_kernel.setArg(15, n);
+        shading_kernel.setArg(16, n);
+
         if(firstpass) {
             // Launch intersection kernel
             queue.enqueueNDRangeKernel(intersectionfp_kernel, NULL, global_work_size, local_work_size);
             queue.flush();
-            queue.finish();
+            // queue.finish();
 
             // End timer
             // finish = std::chrono::high_resolution_clock::now();
                     
             // elapsedintersect += finish - start;
-
-            shadingfp_kernel.setArg(15, n);
 
             // Start timer
             // start = std::chrono::high_resolution_clock::now();
@@ -772,7 +773,7 @@ void runKernels() {
             // Launch intersection kernel
             queue.enqueueNDRangeKernel(intersection_kernel, NULL, global_work_size, local_work_size);
             queue.flush();
-            queue.finish();
+            // queue.finish();
 
             // End timer
             // finish = std::chrono::high_resolution_clock::now();
@@ -788,7 +789,7 @@ void runKernels() {
             queue.enqueueNDRangeKernel(shading_kernel, NULL, global_work_size, local_work_size);
             queue.flush();
         }
-        queue.finish();
+        // queue.finish();
 
         // // End timer
         // finish = std::chrono::high_resolution_clock::now();
@@ -811,14 +812,14 @@ void runKernels() {
             
             int total_size = global_work_size;
 
-            if(total_size >= 512 * 4) {
+            if(total_size >= 1024 * 16) {
 
                 // // Start timer
                 // auto start2 = std::chrono::high_resolution_clock::now();
 
                 std::size_t local_thread_count = 1;
 
-                int thread_count = 512;
+                int thread_count = 1024;
                 int unit_size = (int) ceil(((float) total_size) / ((float) thread_count));
                 // if(total_size % thread_count != 0) 
                 //     unit_size += 1;
@@ -832,7 +833,7 @@ void runKernels() {
                 if(reassign_work_size % local_thread_count != 0) 
                     reassign_work_size = (reassign_work_size / local_thread_count + 1) * local_thread_count;
 
-                auto start2 = std::chrono::high_resolution_clock::now();
+                // auto start2 = std::chrono::high_resolution_clock::now();
                 
                 if(firstpass) {
                     reassignfp_kernel.setArg(3, total_size);
@@ -846,14 +847,14 @@ void runKernels() {
                 }
                 queue.flush();
                 queue.finish();
-                // End timer
-                auto finish2 = std::chrono::high_resolution_clock::now();
+                // // End timer
+                // auto finish2 = std::chrono::high_resolution_clock::now();
 
-                std::chrono::duration<double> elapsed = finish2 - start2;
+                // std::chrono::duration<double> elapsed = finish2 - start2;
 
-                printf("Computed %d chunks in %f s.\n", chunk_amt, elapsed.count());
+                // printf("Computed %d chunks in %f s.\n", chunk_amt, elapsed.count());
 
-                start2 = std::chrono::high_resolution_clock::now();
+                // start2 = std::chrono::high_resolution_clock::now();
                 queue.enqueueReadBuffer(cl_chunks, CL_TRUE, 0, chunk_amt * sizeof(Chunk), cpu_chunks);
 
                 Shift *shifts = new Shift[chunk_amt - 1];
@@ -901,6 +902,7 @@ void runKernels() {
                     for(int i = 0; i < nzshifts; i++) {
                         s = shifts[i];
                         memmove(cpu_actualIDs + s.dst, cpu_actualIDs + s.src, s.size);
+                        
                         // threads[i] = thread(memcpy, naids + s.dst, cpu_actualIDs + s.src, s.size);
                     }
 
@@ -910,17 +912,17 @@ void runKernels() {
                     // }
 
                     
-                    queue.enqueueFillBuffer(cl_finished, 0, 0, global_work_size * sizeof(cl_uchar));
+                    // queue.enqueueFillBuffer(cl_finished, 0, 0, global_work_size * sizeof(cl_uchar));
                     // queue.enqueueWriteBuffer(cl_actualIDs, CL_TRUE, writeto * cl_int_size, (global_work_size - writeto) * cl_int_size, cpu_actualIDs);
                     queue.enqueueWriteBuffer(cl_actualIDs, CL_TRUE, cl_int_size, global_work_size * cl_int_size, cpu_actualIDs);
                     queue.finish();
                 }
                 
-                finish2 = std::chrono::high_resolution_clock::now();
+                // finish2 = std::chrono::high_resolution_clock::now();
 
-                elapsed = finish2 - start2;
+                // elapsed = finish2 - start2;
 
-                printf("Did the rest in %f s.\n", chunk_amt, elapsed.count());
+                // printf("Did the rest in %f s.\n", chunk_amt, elapsed.count());
 
                 // // End timer
                 // auto finish = std::chrono::high_resolution_clock::now();
@@ -933,7 +935,8 @@ void runKernels() {
             else {
 
                 queue.enqueueReadBuffer(cl_finished, CL_TRUE, 0, global_work_size * sizeof(cl_uchar), cpu_finished);
-                // queue.enqueueReadBuffer(cl_actualIDs, CL_TRUE, 0, global_work_size * cl_int_size, cpu_actualIDs);
+                if(!firstpass)
+                    queue.enqueueReadBuffer(cl_actualIDs, CL_TRUE, 0, global_work_size * cl_int_size, cpu_actualIDs);
 
                 int global_work_size_old = global_work_size;
                 
@@ -943,15 +946,13 @@ void runKernels() {
                 if(firstpass) {
                     for(int i = 0; i < global_work_size_old; i++) {
                         if(!cpu_finished[i]) {
-                            cpu_actualIDs[currentpos] = i;
-                            cpu_finished[currentpos++] = 0;
+                            cpu_actualIDs[currentpos++] = i;
                         }
                     }
                 } else {
                     for(int i = 0; i < global_work_size_old; i++) {
                         if(!cpu_finished[i]) {
-                            cpu_actualIDs[currentpos] = cpu_actualIDs[i];
-                            cpu_finished[currentpos++] = 0;
+                            cpu_actualIDs[currentpos++] = cpu_actualIDs[i];
                         }
                     }
                 }
@@ -959,7 +960,6 @@ void runKernels() {
 
                 if(global_work_size_old - global_work_size) {
                     if(global_work_size == 0) break;
-                    queue.enqueueWriteBuffer(cl_finished, CL_TRUE, 0, global_work_size * sizeof(cl_uchar), cpu_finished);
                     queue.enqueueWriteBuffer(cl_actualIDs, CL_TRUE, 0, global_work_size * cl_int_size, cpu_actualIDs);
                     queue.finish();
                 }
@@ -992,6 +992,9 @@ void runKernels() {
     
     global_work_size = window_width * window_height;
     // local_work_size = init_kernel.getWorkGroupInfo<CL_KERNEL_WORK_GROUP_SIZE>(device);
+
+    while(global_work_size < 4 * local_work_size) 
+        local_work_size = (std::size_t) std::max(1, (int) local_work_size / 2);
 
     // Ensure the global work size is a multiple of local work size
     if (global_work_size % local_work_size != 0)
@@ -1048,9 +1051,17 @@ void runKernel(){
     queue.enqueueAcquireGLObjects(&cl_vbos);
     queue.finish();
     
+    auto start = std::chrono::high_resolution_clock::now();
+
     // Launch the kernel
     queue.enqueueNDRangeKernel(kernel, NULL, global_work_size, local_work_size);
     queue.finish();
+
+    auto finish = std::chrono::high_resolution_clock::now();
+
+    std::chrono::duration<double> elapsed = finish - start;
+
+    printf("Megakernel took %f seconds.\n", elapsed.count());
     
     //Release the VBOs so OpenGL can play with them
     queue.enqueueReleaseGLObjects(&cl_vbos);
@@ -1063,6 +1074,8 @@ void render() {
         float arg = 0;
         queue.enqueueFillBuffer(cl_accumbuffer, arg, 0, window_width * window_height * sizeof(cl_float3));
         framenumber = 0;
+        interactiveCamera->buildRenderCamera(cpu_camera);
+        queue.enqueueWriteBuffer(cl_camera, CL_TRUE, 0, sizeof(Camera), cpu_camera);
     }
     buffer_reset = false;
     framenumber++;
@@ -1073,21 +1086,19 @@ void render() {
         // queue.enqueueFillBuffer(cl_actualIDs, CL_TRUE, 0, window_width * window_height * sizeof(cl_int));
         queue.enqueueFillBuffer(cl_finished, CL_TRUE, 0, window_width * window_height * sizeof(cl_uchar));
     }
-    interactiveCamera->buildRenderCamera(cpu_camera);
-    queue.enqueueWriteBuffer(cl_camera, CL_TRUE, 0, sizeof(Camera), cpu_camera);
     
     if(wavefront) {
-        init_kernel.setArg(4, cl_camera);
+        // init_kernel.setArg(4, cl_camera);
         final_kernel.setArg(4, framenumber - 1);
     }
     else {
-        kernel.setArg(11, cl_camera);
+        // kernel.setArg(11, cl_camera);
         kernel.setArg(12, framenumber - 1);
     }
 
     queue.finish();
     
-    // cout << "Running kernels...\n";
+    // std::cout << "Running kernels...\n";
 
     if(wavefront)
         runKernels();
@@ -1096,7 +1107,7 @@ void render() {
     
     drawGL();
     
-    cout << samplesPerRun*framenumber << "\n";
+    std::cout << samplesPerRun*framenumber << "\n";
 
 }
 
@@ -1143,42 +1154,42 @@ int main(int argc, char** argv){
     
     loadConfig("config", &window_width, &window_height, &scn_path, &interactive);
     
-    cout << "Configurations loaded \n";
+    std::cout << "Configurations loaded \n";
     
     initGL(argc, argv);
     
-    cout << "OpenGL initialized \n";
+    std::cout << "OpenGL initialized \n";
     
     initOpenCL();
     
-    cout << "OpenCL initialized \n";
+    std::cout << "OpenCL initialized \n";
     
     createVBO(&vbo);
     
-    cout << "VBO created \n";
+    std::cout << "VBO created \n";
     
     Timer(0);
     
-    cout << "Timer started \n";
+    std::cout << "Timer started \n";
     
     glFinish();
     
-    cout << "glFinish executed \n";
+    std::cout << "glFinish executed \n";
     
     // Create Buffer Values
     createBufferValues();
     
-    cout << "Buffer values created \n";
+    std::cout << "Buffer values created \n";
     
     // Write Buffer Values
     writeBufferValues();
     
-    cout << "Buffer values written \n";
+    std::cout << "Buffer values written \n";
 
     // Clean up initialization
     cleanUpInit();
 
-    cout << "Cleaned up init \n";
+    std::cout << "Cleaned up init \n";
     
     // intitialize the kernel
     if(wavefront)
@@ -1186,12 +1197,12 @@ int main(int argc, char** argv){
     else
         initCLKernel();
     
-    cout << "CL Kernel initialized \n";
+    std::cout << "CL Kernel initialized \n";
     
     // start rendering continuously
     glutMainLoop();
     
-    cout << "glutMainLoop executed \n";
+    std::cout << "glutMainLoop executed \n";
     
     // release memory
     cleanUp();

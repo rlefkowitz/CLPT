@@ -2,11 +2,10 @@
 
 struct Chunk
 {
-	union {
-		struct { int i, f; };
-		int _v[2];
-	};
-
+	int i;
+	int f;
+	int dummy0;
+	int dummy1;
 };
 
 struct Shift

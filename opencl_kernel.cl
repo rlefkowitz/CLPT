@@ -14,6 +14,14 @@ typedef struct RayLw {
     float3 dir;
 } RayLw;
 
+
+typedef struct Chunk {
+    int i;
+    int f;
+    int dummy0;
+    int dummy1;
+} Chunk;
+
 typedef struct Ray {
     float3 origin;
     float3 dir;
@@ -1070,12 +1078,6 @@ __kernel void shading_kernel(__global Ray* rays, __global unsigned char* finishe
 }
 
 
-typedef struct Chunk {
-    int i;
-    int f;
-} Chunk;
-
-
 __kernel void reassign_kernel(__global int* actual_id, __global uchar* finished, __global Chunk* chunks, 
                               const int total_size, const int unit_size) {
 
@@ -1108,27 +1110,39 @@ __kernel void reassign_kernel(__global int* actual_id, __global uchar* finished,
         i++;
     }
 
-    /*printf("Pos: %d, Size: %d, Start: %d, End: %d.\n", glob_id, f - ones, ones, f);*/
-
     chunks[glob_id] = (Chunk) {ones, f};
     
 }
 
 
-__kernel void shift_kernel(__global int* actual_id, __global int* actual_id_new, __global Chunk* chunks, __global Chunk* chunks_new) {
+__kernel void shift_kernel(__global int* actual_id, __global Chunk* chunks) {
 
-    int work_item_id = get_global_id(0);
-    Chunk curr = chunks[work_item_id << 1];
-    Chunk next = chunks[work_item_id << 1 + 1];
+    const int work_item_id = get_global_id(0);
+    const int work_item_idt2 = work_item_id << 1;
+    Chunk curr = chunks[work_item_idt2];
+    Chunk next = chunks[work_item_idt2 + 1];
 
     int dst = curr.i;
     int src = curr.f;
     int endread = next.i;
     
-    while(src < endread) 
-        actual_id_new[dst++] = actual_id[src++];
+    while(src < endread) {
+        actual_id[dst] = actual_id[src];
+        dst++;
+        src++;
+    }
 
-    chunks_new[work_item_id] = (Chunk) {src, next.f};
+    chunks[work_item_idt2] = (Chunk) {dst, next.f};
+    
+}
+
+
+__kernel void shift_helper_kernel(__global Chunk* chunks) {
+
+    const int work_item_id = get_global_id(0);
+    const int work_item_idt2 = work_item_id << 1;
+
+    chunks[work_item_id] = chunks[work_item_idt2];
     
 }
 
