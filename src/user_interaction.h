@@ -8,49 +8,100 @@
 bool save_image = false;
 
 bool buffer_reset = true;
+bool norm_mode = false;
 bool interactive;
-InteractiveCamera* interactiveCamera;
+InteractiveCamera *interactiveCamera;
 
 void initCamera(); // prototype
 
 // keyboard interaction
 void keyboard(unsigned char key, int /*x*/, int /*y*/)
 {
-    switch (key) {
-            
-        case(27) : exit(0);
-        case('p') : save_image = true; break;
+  Camera c;
+  switch (key)
+  {
+
+  case (27):
+    exit(0);
+  case ('p'):
+    save_image = true;
+    break;
+  case ('='):
+    interactiveCamera->buildRenderCamera(&c);
+    printf("setCameraPosition %f %f %f\nsetCameraForward %f %f %f\nsetCameraUp %f %f %f\nsetCameraFocalDistance %f\nsetCameraApertureRadius %f\n",
+           c.pos.x, c.pos.y, c.pos.z, c.fd.x, c.fd.y, c.fd.z, c.up.x, c.up.y, c.up.z, c.focal_distance, c.aperture_radius);
+    break;
+  }
+  if (interactive)
+  {
+    buffer_reset = true;
+    switch (key)
+    {
+    case (' '):
+      initCamera();
+      break;
+    case ('a'):
+      interactiveCamera->strafe(0.2f);
+      break;
+    case ('/'):
+      norm_mode = !norm_mode;
+      buffer_reset = true;
+      break;
+    case ('d'):
+      interactiveCamera->strafe(-0.2f);
+      break;
+    case ('r'):
+      interactiveCamera->changeAltitude(0.2f);
+      break;
+    case ('f'):
+      interactiveCamera->changeAltitude(-0.2f);
+      break;
+    case ('w'):
+      interactiveCamera->goForward(0.2f);
+      break;
+    case ('s'):
+      interactiveCamera->goForward(-0.2f);
+      break;
+    case ('g'):
+      interactiveCamera->changeApertureDiameter(0.1);
+      break;
+    case ('h'):
+      interactiveCamera->changeApertureDiameter(-0.1);
+      break;
+    case ('t'):
+      interactiveCamera->changeFocalDistance(0.1);
+      break;
+    case ('y'):
+      interactiveCamera->changeFocalDistance(-0.1);
+      break;
+    default:
+      buffer_reset = false;
+      break;
     }
-    if(interactive) {
-        buffer_reset = true;
-        switch (key) {
-            case(' ') : initCamera(); break;
-            case('a') : interactiveCamera->strafe(0.2f); break;
-            case('d') : interactiveCamera->strafe(-0.2f); break;
-            case('r') : interactiveCamera->changeAltitude(0.2f); break;
-            case('f') : interactiveCamera->changeAltitude(-0.2f); break;
-            case('w') : interactiveCamera->goForward(0.2f); break;
-            case('s') : interactiveCamera->goForward(-0.2f); break;
-            case('g') : interactiveCamera->changeApertureDiameter(0.1); break;
-            case('h') : interactiveCamera->changeApertureDiameter(-0.1); break;
-            case('t') : interactiveCamera->changeFocalDistance(0.1); break;
-            case('y') : interactiveCamera->changeFocalDistance(-0.1); break;
-            default : buffer_reset = false; break;
-        }
-    }
+  }
 }
 
-void specialkeys(int key, int, int){
-    if(interactive) {
-        switch (key) {
-                
-            case GLUT_KEY_LEFT: interactiveCamera->changeYaw(0.02f); break;
-            case GLUT_KEY_RIGHT: interactiveCamera->changeYaw(-0.02f); break;
-            case GLUT_KEY_UP: interactiveCamera->changePitch(0.02f); break;
-            case GLUT_KEY_DOWN: interactiveCamera->changePitch(-0.02f); break;
-                
-        }
+void specialkeys(int key, int, int)
+{
+  if (interactive)
+  {
+    switch (key)
+    {
+
+    case GLUT_KEY_LEFT:
+      interactiveCamera->changeYaw(0.02f);
+      break;
+    case GLUT_KEY_RIGHT:
+      interactiveCamera->changeYaw(-0.02f);
+      break;
+    case GLUT_KEY_UP:
+      interactiveCamera->changePitch(0.02f);
+      break;
+    case GLUT_KEY_DOWN:
+      interactiveCamera->changePitch(-0.02f);
+      break;
     }
+  }
 }
 
 // mouse event handlers
@@ -68,37 +119,38 @@ float translate_z = -30.0;
 // camera mouse controls in X and Y direction
 void motion(int x, int y)
 {
-    if(interactive) {
-        int deltaX = lastX - x;
-        int deltaY = lastY - y;
-        
-        if (deltaX != 0 || deltaY != 0) {
-            
-            if (theButtonState == GLUT_LEFT_BUTTON)  // Rotate
-            {
-                interactiveCamera->changeYaw(deltaX * 0.01);
-                interactiveCamera->changePitch(-deltaY * 0.01);
-            }
-            else if (theButtonState == GLUT_MIDDLE_BUTTON) // Zoom
-            {
-                interactiveCamera->changeAltitude(-deltaY * 0.01);
-            }
-            
-            lastX = x;
-            lastY = y;
-            buffer_reset = true;
-            // glutPostRedisplay();
-            
-        }
+  if (interactive)
+  {
+    int deltaX = lastX - x;
+    int deltaY = lastY - y;
+
+    if (deltaX != 0 || deltaY != 0)
+    {
+
+      if (theButtonState == GLUT_LEFT_BUTTON) // Rotate
+      {
+        interactiveCamera->changeYaw(deltaX * 0.01);
+        interactiveCamera->changePitch(-deltaY * 0.01);
+      }
+      else if (theButtonState == GLUT_MIDDLE_BUTTON) // Zoom
+      {
+        interactiveCamera->changeAltitude(-deltaY * 0.01);
+      }
+
+      lastX = x;
+      lastY = y;
+      buffer_reset = true;
+      // glutPostRedisplay();
     }
+  }
 }
 
 void mouse(int button, int state, int x, int y)
 {
-    theButtonState = button;
-    theModifierState = glutGetModifiers();
-    lastX = x;
-    lastY = y;
-    
-    motion(x, y);
+  theButtonState = button;
+  theModifierState = glutGetModifiers();
+  lastX = x;
+  lastY = y;
+
+  motion(x, y);
 }

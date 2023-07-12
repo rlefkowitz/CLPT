@@ -2,7 +2,8 @@ CMAKE_MINIMUM_REQUIRED ( VERSION 2.8 )
 
 PROJECT ( CLPath-V0.0.1 )
 
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++17 -pthread -lglew -L/opt/local/lib")
+#set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++17 -pthread -lglew -L/opt/local/lib")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++17 -pthread -L/usr/local/include/GL -L/opt/local/lib")
 set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -framework OpenCL")
 
 #########################################################
@@ -35,6 +36,16 @@ add_definitions(${OpenCL_DEFINITIONS})
 if(NOT OPENCL_FOUND)
     message(ERROR " OPENCL not found!")
 endif(NOT OPENCL_FOUND)
+#########################################################
+# FIND PNG
+#########################################################
+find_package(PNG REQUIRED)
+include_directories(${PNG_INCLUDE_DIRS})
+link_directories(${PNG_LIBRARY_DIRS})
+add_definitions(${PNG_DEFINITIONS})
+if(NOT PNG_FOUND)
+    message(ERROR " PNG not found!")
+endif(NOT PNG_FOUND)
 
 
 
@@ -44,7 +55,7 @@ SET ( CLPATH_SOURCE
   )
 
 SET ( CLPATH_HEADERS
-  Src/bvh.h
+  src/bvh.h
   src/camera.h
   src/chunk.h
   src/cl_gl_interop.h
@@ -56,6 +67,7 @@ SET ( CLPATH_HEADERS
   src/primitives.h
   src/scene.h
   src/sceneloader.h
+  src/spice.h
   src/user_interaction.h
   src/vec.h
   )
@@ -64,7 +76,7 @@ ADD_LIBRARY(clpath STATIC ${CLPATH_SOURCE} ${CLPATH_HEADERS})
 
 ADD_EXECUTABLE(clpath_exe src/main.cpp)
 
-TARGET_LINK_LIBRARIES(clpath_exe clpath ${OPENGL_LIBRARIES} ${GLUT_LIBRARY} ${OPENCL_LIBRARY})
+TARGET_LINK_LIBRARIES(clpath_exe clpath ${OPENGL_LIBRARIES} ${GLUT_LIBRARY} ${OPENCL_LIBRARY} ${PNG_LIBRARY})
 
 SET_TARGET_PROPERTIES ( clpath_exe
   PROPERTIES

@@ -3,8 +3,8 @@
 #include <map>
 #include <sstream>
 #include <string>
-#include "parser.h"
 #include "scene.h"
+#include "objloader.h"
 
 using namespace std;
 
@@ -149,9 +149,11 @@ bool loadScene(Scene &scn, string path)
   //    cout << "Set initial camera and bool values." << endl;
   vector<Sphere> spheres;
   vector<Triangle> triangles;
+  vector<TriangleData> triangleData;
   vector<BVHNode> nodes;
   vector<Material> materials;
   vector<Medium> mediums;
+  vector<string> textures;
   //    cout << "Created vector lists." << endl;
   string iblPath = "";
   Vec3 background_color = Vec3(1.0f, 1.0f, 1.0f);
@@ -236,6 +238,23 @@ bool loadScene(Scene &scn, string path)
       {
         mtl = Material(kd, 0.0f, 4);
       }
+      else if (matType == "msdiff")
+      {
+        float roughness = extractFloat(info, floatvars);
+        mtl = Material(kd, roughness, 5);
+      }
+      else if (matType == "msdielectric")
+      {
+        float roughness = extractFloat(info, floatvars);
+        float ior = extractFloat(info, floatvars);
+        mtl = Material(kd, roughness, ior, 6);
+      }
+      else if (matType == "mscond")
+      {
+        Vec3 k = extractVec3(info, vecvars, floatvars);
+        float roughness = extractFloat(info, floatvars);
+        mtl = Material(kd, k, roughness, 7);
+      }
       if (info.size() > 0)
       {
         if (info[0] == "medium")
@@ -244,7 +263,7 @@ bool loadScene(Scene &scn, string path)
         }
         medIdx = extractInt(info, intvars);
       }
-      if (matType != "metal")
+      if (matType != "metal" && matType != "mscond")
         mtl.ke = ke;
       mtl.medIdx = medIdx;
 
@@ -303,7 +322,7 @@ bool loadScene(Scene &scn, string path)
       Vec3 pos = extractVec3(info, vecvars, floatvars);
       Vec3 scl = extractVec3(info, vecvars, floatvars);
       int mtlIdx = extractInt(info, intvars);
-      loadObj(triangles, model, mtlIdx, pos, scl);
+      loadObj(triangles, triangleData, materials, textures, model, mtlIdx, pos, scl);
     }
     else if (first == "setCameraPosition")
     {
@@ -363,6 +382,8 @@ bool loadScene(Scene &scn, string path)
 
   scn.spheres = spheres;
   scn.triangles = triangles;
+  scn.triangleData = triangleData;
+  scn.textures = textures;
   scn.nodes = nodes;
   scn.materials = materials;
   scn.mediums = mediums;

@@ -1,5 +1,8 @@
 #define PI 3.141592653589793238f
 
+#define STB_IMAGE_IMPLEMENTATION
+#include "stb_image.h"
+
 #include <thread>
 #include <chrono>
 #include <iostream>
@@ -14,6 +17,7 @@
 #include "hdrloader/hdrloader.h"
 #include "sceneloader.h"
 #include "user_interaction.h"
+#include <png++/png.hpp>
 
 using namespace std;
 using namespace cl;
@@ -23,13 +27,20 @@ bool OFFLINE = false;
 bool profiling = false;
 bool wavefront = false;
 
-const int samples = 2048;
+const int samples = 32768;
+const int sample_interval = 128;
 const int samplesPerRun = 1;
 
 // Image-based Lighting variables
 int ibl_width;
 int ibl_height;
 cl_float4 *cpu_ibl;
+
+// texture variables
+int texture_amt;
+int texture_atlas_size;
+TextureData *cpu_textureData;
+cl_float4 *cpu_textureAtlas;
 
 // Background color
 cl_float3 voidcolor;
@@ -40,6 +51,7 @@ int sphere_amt;
 
 // Triangle variables
 Triangle *cpu_triangles;
+TriangleData *cpu_triangleData;
 int triangle_amt;
 
 // BVHNode variables
@@ -116,7 +128,10 @@ Buffer cl_normals;
 Buffer cl_mtlidxs;
 Buffer cl_spheres;
 Buffer cl_triangles;
+Buffer cl_triangleData;
 Buffer cl_nodes;
+Buffer cl_textureData;
+Buffer cl_textureAtlas;
 Buffer cl_accumbuffer;
 Buffer cl_throughputs;
 Buffer cl_materials;
@@ -124,6 +139,41 @@ Buffer cl_ibl;
 BufferGL cl_vbo;
 vector<Memory> cl_vbos;
 
+// For Offline only
+cl_float4 *cpu_output;
+Buffer cl_output;
+
+inline float clamp(float x) { return x < 0.0f ? 0.0f : x > 1.0f ? 1.0f
+                                                                : x; }
+
+// convert RGB float in range [0,1] to int in range [0, 255] and perform gamma correction
+inline int toInt(float x) { return int(clamp(x) * 255 + .5); }
+
+void saveImage()
+{
+  png::image<png::rgb_pixel> image(window_width, window_height);
+  int i = 0;
+  float *s;
+  for (int r = window_height - 1; r >= 0; r--)
+    for (int c = 0; c < window_width; c++, i++)
+    {
+      s = cpu_output[i].s;
+      if (s[0] < 0 || s[0] != s[0] || s[1] < 0 || s[1] != s[1] || s[2] < 0 || s[2] != s[2])
+      {
+        printf("Issue found! (%f, %f, %f)\n", s[0], s[1], s[2]);
+      }
+      image[r][c] = png::rgb_pixel(toInt(s[0]), toInt(s[1]), toInt(s[2]));
+    }
+  remove("opencl_raytracer.png");
+  image.write("opencl_raytracer.png");
+}
+
+#define float3(x, y, z) \
+  {                     \
+    {                   \
+      x, y, z           \
+    }                   \
+  } // macro to replace ugly initializer braces
 unsigned int framenumber = 0;
 
 void pickPlatform(Platform &platform, const vector<Platform> &platforms)
@@ -140,7 +190,7 @@ void pickPlatform(Platform &platform, const vector<Platform> &platforms)
     // handle incorrect user input
     while (input < 1 || input > platforms.size())
     {
-      cin.clear();                               //clear errors/bad flags on cin
+      cin.clear();                               // clear errors/bad flags on cin
       cin.ignore(cin.rdbuf()->in_avail(), '\n'); // ignores exact number of chars in cin buffer
       std::cout << "No such option. Choose an OpenCL platform: ";
       cin >> input;
@@ -163,7 +213,7 @@ void pickDevice(Device &device, const vector<Device> &devices)
     // handle incorrect user input
     while (input < 1 || input > devices.size())
     {
-      cin.clear();                               //clear errors/bad flags on cin
+      cin.clear();                               // clear errors/bad flags on cin
       cin.ignore(cin.rdbuf()->in_avail(), '\n'); // ignores exact number of chars in cin buffer
       std::cout << "No such option. Choose an OpenCL device: ";
       cin >> input;
@@ -248,7 +298,88 @@ void initOpenCL()
 
   // Convert the OpenCL source code to a string// Convert the OpenCL source code to a string
   string source;
+  // ifstream file("opencl_kernel_bvhtest.cl");
   ifstream file("opencl_kernel.cl");
+  if (!file)
+  {
+    std::cout << "\nNo OpenCL file found!" << endl
+              << "Exiting..." << endl;
+    system("PAUSE");
+    exit(1);
+  }
+  while (!file.eof())
+  {
+    char line[256];
+    file.getline(line, 255);
+    source += line;
+  }
+
+  const char *kernel_source = source.c_str();
+
+  // Create an OpenCL program with source
+  program = Program(context, kernel_source);
+  std::cout << "Created program\n";
+
+  // Build the program for the selected device
+  cl_int result = program.build({device}); // "-cl-fast-relaxed-math"
+  std::cout << "Built program on device\n";
+  if (result)
+    std::cout << "Error during compilation OpenCL code!!!\n (" << result << ")" << endl;
+  if (result == CL_BUILD_PROGRAM_FAILURE)
+    printErrorLog(program, device);
+}
+
+void initOpenCL_offline()
+{
+  // Get all available OpenCL platforms (e.g. AMD OpenCL, Nvidia CUDA, Intel OpenCL)
+  vector<Platform> platforms;
+  Platform::get(&platforms);
+  std::cout << "Available OpenCL platforms : " << endl
+            << endl;
+  for (int i = 0; i < platforms.size(); i++)
+    std::cout << "\t" << i + 1 << ": " << platforms[i].getInfo<CL_PLATFORM_NAME>() << endl;
+
+  // Pick one platform
+  Platform platform;
+  pickPlatform(platform, platforms);
+  std::cout << "\nUsing OpenCL platform: \t" << platform.getInfo<CL_PLATFORM_NAME>() << endl;
+
+  // Get available OpenCL devices on platform
+  vector<Device> devices;
+  platform.getDevices(CL_DEVICE_TYPE_ALL, &devices);
+
+  std::cout << "Available OpenCL devices on this platform: " << endl
+            << endl;
+  for (int i = 0; i < devices.size(); i++)
+  {
+    std::cout << "\t" << i + 1 << ": " << devices[i].getInfo<CL_DEVICE_NAME>() << endl;
+    std::cout << "\t\tMax compute units: " << devices[i].getInfo<CL_DEVICE_MAX_COMPUTE_UNITS>() << endl;
+    std::cout << "\t\tMax work group size: " << devices[i].getInfo<CL_DEVICE_MAX_WORK_GROUP_SIZE>() << endl
+              << endl;
+  }
+
+  // Pick one device
+  pickDevice(device, devices);
+  std::cout << "\nUsing OpenCL device: \t" << device.getInfo<CL_DEVICE_NAME>() << endl;
+  std::cout << "\t\t\tMax compute units: " << device.getInfo<CL_DEVICE_MAX_COMPUTE_UNITS>() << endl;
+  std::cout << "\t\t\tMax work group size: " << device.getInfo<CL_DEVICE_MAX_WORK_GROUP_SIZE>() << endl;
+
+  // Create a command queue
+  context = Context(device);
+  std::cout << "Created context\n";
+  if (profiling)
+  {
+    queue = CommandQueue(context, device, CL_QUEUE_PROFILING_ENABLE);
+  }
+  else
+  {
+    queue = CommandQueue(context, device);
+  }
+  std::cout << "Created queue\n";
+
+  // Convert the OpenCL source code to a string// Convert the OpenCL source code to a string
+  string source;
+  ifstream file("opencl_kernel_offline.cl");
   if (!file)
   {
     std::cout << "\nNo OpenCL file found!" << endl
@@ -291,7 +422,9 @@ void buildScene()
   vector<Medium> mediums = scn.mediums;
   vector<Sphere> spheres = scn.spheres;
   vector<Triangle> triangles = scn.triangles;
+  vector<TriangleData> triangleData = scn.triangleData;
   vector<BVHNode> nodes = scn.nodes;
+  vector<string> textures = scn.textures;
 
   /*
      Construct the BVH for all triangles added to the scene, if any.
@@ -299,7 +432,7 @@ void buildScene()
   if (triangles.size() > 0)
   {
     printf("Building BVH for scene with %d triangles...\n", triangles.size());
-    nodes = build(triangles);
+    nodes = build(triangles, triangleData);
     printf("BVH finished for scene with %d triangles!\n\n", triangles.size());
   }
 
@@ -315,9 +448,14 @@ void buildScene()
   printf("Triangles: %d\n", triangle_amt);
 
   cpu_triangles = new Triangle[triangle_amt];
+  cpu_triangleData = new TriangleData[triangle_amt];
   for (int i = 0; i < triangle_amt; i++)
+  {
     cpu_triangles[i] = triangles[i];
+    cpu_triangleData[i] = triangleData[i];
+  }
   triangles.clear();
+  triangleData.clear();
 
   bvhnode_amt = nodes.size();
   printf("BVH Nodes: %d\n", bvhnode_amt);
@@ -342,6 +480,31 @@ void buildScene()
   for (int i = 0; i < medium_amt; i++)
     cpu_mediums[i] = mediums[i];
   mediums.clear();
+
+  texture_amt = textures.size();
+  texture_atlas_size = 0;
+  cpu_textureData = new TextureData[texture_amt];
+  for (int i = 0; i < texture_amt; i++)
+  {
+    int w, h, n;
+    stbi_info(("res/textures/" + textures[i]).c_str(), &w, &h, &n);
+    cpu_textureData[i].w = w;
+    cpu_textureData[i].h = h;
+    cpu_textureData[i].s = texture_atlas_size;
+    texture_atlas_size += w * h;
+    printf("attribs: (%d, %d, %d)\n", cpu_textureData[i].w, cpu_textureData[i].h, cpu_textureData[i].s);
+  }
+  cpu_textureAtlas = new cl_float4[texture_atlas_size];
+  int alloc = 0;
+  for (int i = 0; i < texture_amt; i++)
+  {
+    int w, h, n;
+    unsigned char *data = stbi_load(("res/textures/" + textures[i]).c_str(), &w, &h, &n, 0);
+    for (int j = 0; j < w * h; j++)
+      cpu_textureAtlas[j + alloc] = (cl_float4){{float(data[n * j]) / 255.0f, n <= 1 ? 0.0f : float(data[n * j + 1]) / 255.0f, n <= 2 ? 0.0f : float(data[n * j + 2]) / 255.0f, n <= 3 ? 0.0f : float(data[n * j + 3]) / 255.0f}};
+    alloc += w * h;
+    printf("s: %s, n: %d\n", textures[i].c_str(), n);
+  }
 }
 
 void createBufferValues()
@@ -371,14 +534,14 @@ void createBufferValues()
   bool ret = HDRLoader::load(ibl_src, result);
   ibl_width = result.width;
   ibl_height = result.height;
-  cpu_ibl = new cl_float3[ibl_width * ibl_height];
+  cpu_ibl = new cl_float4[ibl_width * ibl_height];
   float r, g, b;
   for (int i = 0; i < ibl_width * ibl_height; i++)
   {
     r = result.cols[3 * i];
     g = result.cols[3 * i + 1];
     b = result.cols[3 * i + 2];
-    cpu_ibl[i] = (cl_float3){{r, g, b}};
+    cpu_ibl[i] = (cl_float4){{r, g, b}};
   }
   cpu_usefulnums[2] = (cl_uint)ibl_width;
   cpu_usefulnums[3] = (cl_uint)ibl_height;
@@ -410,6 +573,67 @@ void createBufferValues()
     cpu_actualIDs = new cl_int[window_width * window_height];
     cpu_chunks = new Chunk[2048];
   }
+}
+
+void createBufferValues_offline()
+{
+
+  // Assemble Useful Numbers
+  cpu_usefulnums = new cl_uint[11];
+  cpu_usefulnums[0] = (cl_uint)window_width;
+  cpu_usefulnums[1] = (cl_uint)window_height;
+
+  // Generate random seeds
+  cpu_randoms = new cl_uint[window_width * window_height];
+  for (int i = 0; i < window_width * window_height; i++)
+  {
+    cpu_randoms[i] = (cl_uint)(distribution(generator));
+  }
+
+  // Construct the scene
+  buildScene();
+
+  // IBL Loading
+  string ibl_src_str = scn.iblPath;
+  std::cout << ibl_src_str << endl;
+  const char *ibl_src = ibl_src_str.c_str();
+
+  HDRLoaderResult result;
+  bool ret = HDRLoader::load(ibl_src, result);
+  ibl_width = result.width;
+  ibl_height = result.height;
+  cpu_ibl = new cl_float4[ibl_width * ibl_height];
+  float r, g, b;
+  for (int i = 0; i < ibl_width * ibl_height; i++)
+  {
+    r = result.cols[3 * i];
+    g = result.cols[3 * i + 1];
+    b = result.cols[3 * i + 2];
+    cpu_ibl[i] = (cl_float4){{r, g, b}};
+  }
+  cpu_usefulnums[2] = (cl_uint)ibl_width;
+  cpu_usefulnums[3] = (cl_uint)ibl_height;
+
+  cpu_usefulnums[4] = (cl_uint)sphere_amt;
+  cpu_usefulnums[5] = (cl_uint)triangle_amt;
+  cpu_usefulnums[6] = (cl_uint)bvhnode_amt;
+  cpu_usefulnums[7] = (cl_uint)material_amt;
+  cpu_usefulnums[8] = (cl_uint)medium_amt;
+  cpu_usefulnums[9] = (cl_uint)samplesPerRun;
+
+  bools = 0;
+  bools |= scn.use_DOF;
+  bools |= scn.use_IbL << 1;
+  bools |= scn.use_ground << 2;
+
+  cpu_usefulnums[10] = bools;
+
+  initCamera();
+
+  cpu_camera = new Camera();
+  interactiveCamera->buildRenderCamera(cpu_camera);
+
+  voidcolor = (cl_float3){{scn.background_color.x, scn.background_color.y, scn.background_color.z}};
 }
 
 void writeBufferValues()
@@ -471,10 +695,22 @@ void writeBufferValues()
   std::cout << "Wrote randoms \n";
 
   // Create ibl buffer on the OpenCL device
-  cl_ibl = Buffer(context, CL_MEM_READ_ONLY, ibl_width * ibl_height * sizeof(cl_float3));
-  queue.enqueueWriteBuffer(cl_ibl, CL_TRUE, 0, ibl_width * ibl_height * sizeof(cl_float3), cpu_ibl);
+  cl_ibl = Buffer(context, CL_MEM_READ_ONLY, ibl_width * ibl_height * sizeof(cl_float4));
+  queue.enqueueWriteBuffer(cl_ibl, CL_TRUE, 0, ibl_width * ibl_height * sizeof(cl_float4), cpu_ibl);
 
   std::cout << "Wrote IbL \n";
+
+  // Create texture data buffer on the OpenCL device
+  cl_textureData = Buffer(context, CL_MEM_READ_ONLY, texture_amt * sizeof(TextureData));
+  queue.enqueueWriteBuffer(cl_textureData, CL_TRUE, 0, texture_amt * sizeof(TextureData), cpu_textureData);
+
+  std::cout << "Wrote Texture Data \n";
+
+  // Create ibl buffer on the OpenCL device
+  cl_textureAtlas = Buffer(context, CL_MEM_READ_ONLY, texture_atlas_size * sizeof(cl_float4));
+  queue.enqueueWriteBuffer(cl_textureAtlas, CL_TRUE, 0, texture_atlas_size * sizeof(cl_float4), cpu_textureAtlas);
+
+  std::cout << "Wrote Texture Atlas \n";
 
   // Create sphere buffer on the OpenCL device
   cl_spheres = Buffer(context, CL_MEM_READ_ONLY, sphere_amt * sizeof(Sphere));
@@ -487,6 +723,12 @@ void writeBufferValues()
   queue.enqueueWriteBuffer(cl_triangles, CL_TRUE, 0, triangle_amt * sizeof(Triangle), cpu_triangles);
 
   std::cout << "Wrote triangles \n";
+
+  // Create triangle data buffer on the OpenCL device
+  cl_triangleData = Buffer(context, CL_MEM_READ_ONLY, triangle_amt * sizeof(TriangleData));
+  queue.enqueueWriteBuffer(cl_triangleData, CL_TRUE, 0, triangle_amt * sizeof(TriangleData), cpu_triangleData);
+
+  std::cout << "Wrote triangle data \n";
 
   // Create BVH node buffer on the OpenCL device
   cl_nodes = Buffer(context, CL_MEM_READ_ONLY, bvhnode_amt * sizeof(BVHNode));
@@ -524,6 +766,89 @@ void writeBufferValues()
   std::cout << "Created accumbuffer \n";
 }
 
+void writeBufferValues_offline()
+{
+
+  // Create useful nums buffer on the OpenCL device
+  cl_usefulnums = Buffer(context, CL_MEM_READ_ONLY, 11 * sizeof(cl_uint));
+  queue.enqueueWriteBuffer(cl_usefulnums, CL_TRUE, 0, 11 * sizeof(cl_uint), cpu_usefulnums);
+
+  std::cout << "Wrote useful numbers \n";
+
+  // Create random buffer on the OpenCL device
+  cl_randoms = Buffer(context, CL_MEM_READ_WRITE, window_width * window_height * sizeof(cl_uint));
+  queue.enqueueWriteBuffer(cl_randoms, CL_TRUE, 0, window_width * window_height * sizeof(cl_uint), cpu_randoms);
+
+  std::cout << "Wrote randoms \n";
+
+  // Create ibl buffer on the OpenCL device
+  cl_ibl = Buffer(context, CL_MEM_READ_ONLY, ibl_width * ibl_height * sizeof(cl_float4));
+  queue.enqueueWriteBuffer(cl_ibl, CL_TRUE, 0, ibl_width * ibl_height * sizeof(cl_float4), cpu_ibl);
+
+  std::cout << "Wrote IbL \n";
+
+  // Create texture data buffer on the OpenCL device
+  cl_textureData = Buffer(context, CL_MEM_READ_ONLY, texture_amt * sizeof(TextureData));
+  queue.enqueueWriteBuffer(cl_textureData, CL_TRUE, 0, texture_amt * sizeof(TextureData), cpu_textureData);
+
+  std::cout << "Wrote Texture Data \n";
+
+  // Create ibl buffer on the OpenCL device
+  cl_textureAtlas = Buffer(context, CL_MEM_READ_ONLY, texture_atlas_size * sizeof(cl_float4));
+  queue.enqueueWriteBuffer(cl_textureAtlas, CL_TRUE, 0, texture_atlas_size * sizeof(cl_float4), cpu_textureAtlas);
+
+  std::cout << "Wrote Texture Atlas \n";
+
+  // Create sphere buffer on the OpenCL device
+  cl_spheres = Buffer(context, CL_MEM_READ_ONLY, sphere_amt * sizeof(Sphere));
+  queue.enqueueWriteBuffer(cl_spheres, CL_TRUE, 0, sphere_amt * sizeof(Sphere), cpu_spheres);
+
+  std::cout << "Wrote spheres \n";
+
+  // Create triangle buffer on the OpenCL device
+  cl_triangles = Buffer(context, CL_MEM_READ_ONLY, triangle_amt * sizeof(Triangle));
+  queue.enqueueWriteBuffer(cl_triangles, CL_TRUE, 0, triangle_amt * sizeof(Triangle), cpu_triangles);
+
+  std::cout << "Wrote triangles \n";
+
+  // Create triangle buffer on the OpenCL device
+  cl_triangleData = Buffer(context, CL_MEM_READ_ONLY, triangle_amt * sizeof(TriangleData));
+  queue.enqueueWriteBuffer(cl_triangleData, CL_TRUE, 0, triangle_amt * sizeof(TriangleData), cpu_triangleData);
+
+  std::cout << "Wrote triangle data \n";
+
+  // Create BVH node buffer on the OpenCL device
+  cl_nodes = Buffer(context, CL_MEM_READ_ONLY, bvhnode_amt * sizeof(BVHNode));
+  queue.enqueueWriteBuffer(cl_nodes, CL_TRUE, 0, bvhnode_amt * sizeof(BVHNode), cpu_bvhs);
+
+  std::cout << "Wrote BVH \n";
+
+  // Create material buffer on the OpenCL device
+  cl_materials = Buffer(context, CL_MEM_READ_ONLY, material_amt * sizeof(Material));
+  queue.enqueueWriteBuffer(cl_materials, CL_TRUE, 0, material_amt * sizeof(Material), cpu_materials);
+
+  std::cout << "Wrote materials \n";
+
+  // Create medium buffer on the OpenCL device
+  cl_mediums = Buffer(context, CL_MEM_READ_ONLY, medium_amt * sizeof(Medium));
+  queue.enqueueWriteBuffer(cl_mediums, CL_TRUE, 0, medium_amt * sizeof(Medium), cpu_mediums);
+
+  std::cout << "Wrote mediums \n";
+
+  // Create camera buffer on the OpenCL device
+  cl_camera = Buffer(context, CL_MEM_READ_ONLY, sizeof(Camera));
+  queue.enqueueWriteBuffer(cl_camera, CL_TRUE, 0, sizeof(Camera), cpu_camera);
+
+  std::cout << "Wrote camera \n";
+
+  cl_output = Buffer(context, CL_MEM_WRITE_ONLY, window_width * window_height * sizeof(cl_float3));
+
+  // reserve memory buffer on OpenCL device to hold image buffer for accumulated samples
+  cl_accumbuffer = Buffer(context, CL_MEM_WRITE_ONLY, window_width * window_height * sizeof(cl_float3));
+
+  std::cout << "Created accumbuffer \n";
+}
+
 void initCLKernel()
 {
 
@@ -541,9 +866,43 @@ void initCLKernel()
   kernel.setArg(7, cl_nodes);
   kernel.setArg(8, cl_materials);
   kernel.setArg(9, cl_mediums);
-  kernel.setArg(10, voidcolor);
-  kernel.setArg(11, cl_camera);
-  kernel.setArg(12, framenumber);
+  kernel.setArg(10, cl_textureData);
+  kernel.setArg(11, cl_textureAtlas);
+  kernel.setArg(12, cl_triangleData);
+  kernel.setArg(13, voidcolor);
+  kernel.setArg(14, cl_camera);
+  kernel.setArg(15, framenumber);
+}
+
+void initCLKernel_offline()
+{
+
+  // Create the kernel
+  kernel = Kernel(program, "render_kernel");
+
+  // specify kernel arguments
+  kernel.setArg(0, cl_accumbuffer);
+  kernel.setArg(1, cl_usefulnums);
+  kernel.setArg(2, cl_randoms);
+  kernel.setArg(3, cl_ibl);
+  kernel.setArg(4, cl_spheres);
+  kernel.setArg(5, cl_triangles);
+  kernel.setArg(6, cl_nodes);
+  kernel.setArg(7, cl_materials);
+  kernel.setArg(8, cl_mediums);
+  kernel.setArg(9, cl_textureData);
+  kernel.setArg(10, cl_textureAtlas);
+  kernel.setArg(11, cl_triangleData);
+  kernel.setArg(12, voidcolor);
+  kernel.setArg(13, cl_camera);
+
+  final_kernel = Kernel(program, "final_kernel");
+
+  final_kernel.setArg(0, cl_output);
+  final_kernel.setArg(1, cl_accumbuffer);
+  final_kernel.setArg(2, window_width);
+  final_kernel.setArg(3, window_height);
+  final_kernel.setArg(4, framenumber);
 }
 
 void initInitKernel()
@@ -697,6 +1056,7 @@ void initFinalKernel()
   final_kernel.setArg(4, framenumber);
 }
 
+// TODO wavefront-relevant
 void initCLKernels()
 {
 
@@ -721,6 +1081,7 @@ void initCLKernels()
   std::cout << "Initialized Final Kernel\n";
 }
 
+// TODO wavefront-relevant
 void runKernels()
 {
 
@@ -1051,7 +1412,7 @@ void runKernels()
 
   // elapsedfinish += finish - start;
 
-  //Release the VBOs so OpenGL can play with them
+  // Release the VBOs so OpenGL can play with them
   queue.enqueueReleaseGLObjects(&cl_vbos);
   queue.finish();
 
@@ -1076,7 +1437,7 @@ void runKernel()
   // every pixel in the image has its own thread or "work item",
   // so the total amount of work items equals the number of pixels
   std::size_t global_work_size = window_width * window_height;
-  std::size_t local_work_size = 64; //kernel.getWorkGroupInfo<CL_KERNEL_WORK_GROUP_SIZE>(device);
+  std::size_t local_work_size = 64; // kernel.getWorkGroupInfo<CL_KERNEL_WORK_GROUP_SIZE>(device);
 
   // Ensure the global work size is a multiple of local work size
   if (global_work_size % local_work_size != 0)
@@ -1101,9 +1462,69 @@ void runKernel()
 
   printf("Megakernel took %f seconds.\n", elapsed.count());
 
-  //Release the VBOs so OpenGL can play with them
+  // Release the VBOs so OpenGL can play with them
   queue.enqueueReleaseGLObjects(&cl_vbos);
   queue.finish();
+}
+
+void runKernel_offline()
+{
+  // every pixel in the image has its own thread or "work item",
+  // so the total amount of work items equals the number of pixels
+  std::size_t global_work_size = window_width * window_height;
+  std::size_t local_work_size = 64; // kernel.getWorkGroupInfo<CL_KERNEL_WORK_GROUP_SIZE>(device);
+
+  // Ensure the global work size is a multiple of local work size
+  if (global_work_size % local_work_size != 0)
+    global_work_size = (global_work_size / local_work_size + 1) * local_work_size;
+
+  int i = 0;
+
+  queue.enqueueFillBuffer(cl_accumbuffer, 0, 0, window_width * window_height * sizeof(cl_float3));
+  queue.finish();
+
+  for (; i < samples; i++)
+  {
+
+    auto start = std::chrono::high_resolution_clock::now();
+
+    // Launch the kernel
+
+    queue.enqueueNDRangeKernel(kernel, NULL, global_work_size, local_work_size);
+    queue.finish();
+
+    auto finish = std::chrono::high_resolution_clock::now();
+
+    std::chrono::duration<double> elapsed = finish - start;
+
+    printf("Megakernel took %f seconds.\n", elapsed.count());
+
+    printf("%d/%d samples per pixel\n", i + 1, samples);
+
+    if ((i + 1) % sample_interval == 0)
+    {
+      final_kernel.setArg(4, i + 1);
+
+      global_work_size = window_width * window_height;
+      // local_work_size = init_kernel.getWorkGroupInfo<CL_KERNEL_WORK_GROUP_SIZE>(device);
+
+      while (global_work_size < 4 * local_work_size)
+        local_work_size = (std::size_t)std::max(1, (int)local_work_size / 2);
+
+      // Ensure the global work size is a multiple of local work size
+      if (global_work_size % local_work_size != 0)
+        global_work_size = (global_work_size / local_work_size + 1) * local_work_size;
+
+      // Launch final kernel
+      queue.enqueueNDRangeKernel(final_kernel, NULL, global_work_size, local_work_size);
+      queue.finish();
+
+      queue.enqueueReadBuffer(cl_output, CL_TRUE, 0, window_width * window_height * sizeof(cl_float3), cpu_output);
+      queue.finish();
+
+      saveImage();
+    }
+  }
 }
 
 void render()
@@ -1112,13 +1533,23 @@ void render()
   if (buffer_reset)
   {
     float arg = 0;
+    queue.enqueueWriteBuffer(cl_randoms, CL_TRUE, 0, window_width * window_height * sizeof(cl_uint), cpu_randoms);
+    queue.finish();
     queue.enqueueFillBuffer(cl_accumbuffer, arg, 0, window_width * window_height * sizeof(cl_float3));
+    queue.finish();
     framenumber = 0;
-    interactiveCamera->buildRenderCamera(cpu_camera);
-    queue.enqueueWriteBuffer(cl_camera, CL_TRUE, 0, sizeof(Camera), cpu_camera);
   }
+  if (norm_mode && !wavefront)
+  {
+    framenumber = -2;
+  }
+
   buffer_reset = false;
   framenumber++;
+
+  interactiveCamera->buildRenderCamera(cpu_camera);
+  queue.enqueueWriteBuffer(cl_camera, CL_TRUE, 0, sizeof(Camera), cpu_camera);
+  queue.finish();
 
   if (wavefront)
   {
@@ -1126,6 +1557,7 @@ void render()
     // cpu_chunks = new Chunk[2048];
     // queue.enqueueFillBuffer(cl_actualIDs, CL_TRUE, 0, window_width * window_height * sizeof(cl_int));
     queue.enqueueFillBuffer(cl_finished, CL_TRUE, 0, window_width * window_height * sizeof(cl_uchar));
+    queue.finish();
   }
 
   if (wavefront)
@@ -1136,10 +1568,8 @@ void render()
   else
   {
     // kernel.setArg(11, cl_camera);
-    kernel.setArg(12, framenumber - 1);
+    kernel.setArg(15, framenumber - 1);
   }
-
-  queue.finish();
 
   // std::cout << "Running kernels...\n";
 
@@ -1153,17 +1583,28 @@ void render()
   std::cout << samplesPerRun * framenumber << "\n";
 }
 
+void render_offline()
+{
+
+  interactiveCamera->buildRenderCamera(cpu_camera);
+  queue.enqueueWriteBuffer(cl_camera, CL_TRUE, 0, sizeof(Camera), cpu_camera);
+  queue.finish();
+
+  runKernel_offline();
+}
+
 void cleanUp()
 {
   delete cpu_chunks;
   delete cpu_finished;
   delete cpu_actualIDs;
   // delete cpu_accumbuffer;
-  // delete cpu_randoms;
+  delete cpu_randoms;
   // delete cpu_usefulnums;
   // delete cpu_ibl;
   // delete cpu_spheres;
   // delete cpu_triangles;
+  // delete cpu_triangleData;
   // delete cpu_bvhs;
   // delete cpu_materials;
   // delete cpu_mediums;
@@ -1172,11 +1613,11 @@ void cleanUp()
 
 void cleanUpInit()
 {
-  delete cpu_randoms;
   delete cpu_usefulnums;
   delete cpu_ibl;
   delete cpu_spheres;
   delete cpu_triangles;
+  delete cpu_triangleData;
   delete cpu_bvhs;
   delete cpu_materials;
   delete cpu_mediums;
@@ -1195,8 +1636,56 @@ void initCamera()
   interactiveCamera = new InteractiveCamera(cam_pos, cam_fd, cam_up, cam_focal_distance, cam_aperture_radius);
 }
 
+int main_offline(int arc, char **argv)
+{
+
+  // Load the config file
+  loadConfig("config", &window_width, &window_height, &scn_path, &interactive);
+
+  std::cout << "Configurations loaded \n";
+
+  // Init OpenCL
+  initOpenCL_offline();
+
+  std::cout << "OpenCL initialized \n";
+
+  cpu_output = new cl_float3[window_width * window_height];
+
+  // Create Buffer Values
+  createBufferValues_offline();
+
+  std::cout << "Buffer values created \n";
+
+  // Write Buffer Values
+  writeBufferValues_offline();
+
+  std::cout << "Buffer values written \n";
+
+  // Clean up initialization
+  cleanUpInit();
+
+  std::cout << "Cleaned up init \n";
+
+  // intitialize the kernel
+  initCLKernel_offline();
+
+  std::cout << "CL Kernel initialized \n";
+
+  render_offline();
+
+  // release memory
+  cleanUp();
+
+  return 0;
+}
+
 int main(int argc, char **argv)
 {
+
+  if (OFFLINE)
+  {
+    return main_offline(argc, argv);
+  }
 
   // Load the config file
   loadConfig("config", &window_width, &window_height, &scn_path, &interactive);
@@ -1257,6 +1746,8 @@ int main(int argc, char **argv)
 
   // release memory
   cleanUp();
+
+  system("PAUSE");
 
   return 0;
 }

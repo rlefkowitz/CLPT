@@ -2,43 +2,88 @@
 
 #include "primitives.h"
 #include <algorithm>
+#include "spice.h"
 
 using namespace std;
 
-// void print(std::vector<float> const &input) {
-//     for (int i = 0; i < input.size(); i++) {
-//         cout << (float) input.at(i) << ' ';
-//     }
-//     cout << endl;
-// }
+const int resMax = 64;
 
-struct TriNumPair
+int bvhaxis;
+
+struct AABB
 {
-  Triangle tri;
-  float cst;
-
-  TriNumPair(Triangle t, const float &c) : tri(t), cst(c) {}
-
-  bool operator<(const TriNumPair &tnp) const
+  union
   {
-    return (cst < tnp.cst);
+    Vec3 box[2];
+    float _v[8];
+  };
+
+  AABB() : box{Vec3(1e20f, 1e20f, 1e20f), Vec3(-1e20f, -1e20f, -1e20f)}
+  {
   }
 
-  bool operator>(const TriNumPair &tnp) const
+  AABB(Vec3 b[]) : box{b[0], b[1]} {}
+
+  AABB(const AABB &b) : box{b.box[0], b.box[1]} {}
+
+  AABB(Vec3 a, Vec3 b) : box{a, b} {}
+
+  inline Vec3 mp() { return ((box[0] + box[1]) * 0.5f); }
+
+  inline Vec3 span() { return (box[1] - box[0]); }
+
+  inline float sa()
   {
-    return (cst > tnp.cst);
+    Vec3 sp = span();
+    return sp.x * sp.y + sp.y * sp.z + sp.x * sp.z;
+  }
+
+  inline void grow(Vec3 pt)
+  {
+    box[0] = min3(box[0], pt);
+    box[1] = max3(box[1], pt);
+  }
+
+  inline void grow(AABB capt)
+  {
+    box[0] = min3(box[0], capt.box[0]);
+    box[1] = max3(box[1], capt.box[1]);
   }
 };
 
-//void print(std::vector<int> const &input)
-//{
-//    for (int i = 0; i < input.size(); i++) {
-//        cout << input.at(i) << ' ';
-//    }
-//    cout << endl;
-//}
+AABB boxFromTriangle(Triangle triangle)
+{
+  return AABB(Vec3(
+                  min(triangle.v0.x, min(triangle.v1.x, triangle.v2.x)),
+                  min(triangle.v0.y, min(triangle.v1.y, triangle.v2.y)),
+                  min(triangle.v0.z, min(triangle.v1.z, triangle.v2.z))),
+              Vec3(
+                  max(triangle.v0.x, max(triangle.v1.x, triangle.v2.x)),
+                  max(triangle.v0.y, max(triangle.v1.y, triangle.v2.y)),
+                  max(triangle.v0.z, max(triangle.v1.z, triangle.v2.z))));
+}
 
-const int res = 16;
+struct TriangleBox
+{
+  Triangle tri;
+  AABB box;
+  Vec3 mp;
+  TriangleData data;
+
+  TriangleBox(const TriangleBox &tb) : tri(tb.tri), box(tb.box), mp(tb.mp), data(tb.data) {}
+
+  TriangleBox(Triangle t, AABB b, TriangleData d) : tri(t), box(b), mp(b.mp()), data(d) {}
+
+  bool operator>(const TriangleBox &x) const
+  {
+    return (tri > x.tri);
+  }
+
+  bool operator<(const TriangleBox x) const
+  {
+    return mp[bvhaxis] < x.mp[bvhaxis];
+  }
+};
 
 struct Split
 {
@@ -50,22 +95,33 @@ struct Split
 
 struct BVHNode
 {
-  Vec3 box[2];
+  AABB box;
   int parent, child1, child2, isLeaf;
+  int dummy[4];
 
-  inline Vec3 span() const { return (box[1] - box[0]); }
-
-  inline float sa() const
+  BVHNode() : box(), parent(), child1(), child2(), isLeaf()
   {
-    Vec3 sp = span();
-    return abs(2.0f * (sp.x * sp.y + sp.y * sp.z + sp.x * sp.z));
+  }
+
+  BVHNode(const BVHNode &other) noexcept
+      : box(), parent(), child1(), child2(), isLeaf()
+  {
+    box = other.box;
+    parent = other.parent;
+    child1 = other.child1;
+    child2 = other.child2;
+    isLeaf = other.isLeaf;
   }
 };
 
 struct Bin
 {
-  BVHNode bb;
-  vector<Triangle> triangles;
+  AABB bb;
+  int count;
+
+  Bin() : bb(), count(0) {}
+  Bin(AABB bb, int count) : bb(bb), count(count) {}
+  Bin(TriangleBox tri) : bb(tri.box), count(1) {}
 };
 
 bool setIfBetterSplit(Split &past, Split &curr)
@@ -81,79 +137,48 @@ bool setIfBetterSplit(Split &past, Split &curr)
   return false;
 }
 
-Bin initBin()
+void addPrimitive(Bin &b, TriangleBox t)
 {
-  Bin newBin;
-  newBin.triangles.clear();
-  newBin.bb.box[0] = Vec3(1e20f, 1e20f, 1e20f);
-  newBin.bb.box[1] = Vec3(-1e20f, -1e20f, -1e20f);
-  return newBin;
+  b.count++;
+  b.bb.grow(t.box);
 }
 
-void grow(BVHNode &node, Vec3 pt)
+const float traversalStepCost = 0.5f;
+const float primitiveIsectCost = 1.0f;
+
+void makeLeaf(vector<BVHNode> &bvh, vector<TriangleBox> &tris, vector<Triangle> &flatTriangles, vector<TriangleData> &flatTriangleData, BVHNode node, int parentidx, int whichchild)
 {
-  node.box[0] = min3(node.box[0], pt);
-  node.box[1] = max3(node.box[1], pt);
+  node.isLeaf = 1;
+
+  sort(tris.begin(), tris.end(), greater<TriangleBox>());
+
+  vector<Triangle> ftris;
+  ftris.clear();
+
+  vector<TriangleData> ftriData;
+  ftriData.clear();
+
+  for (TriangleBox tri : tris)
+  {
+    ftris.push_back(tri.tri);
+    ftriData.push_back(tri.data);
+  }
+
+  node.child1 = flatTriangles.size();
+  flatTriangles.insert(flatTriangles.end(), ftris.begin(), ftris.end());
+  flatTriangleData.insert(flatTriangleData.end(), ftriData.begin(), ftriData.end());
+  node.child2 = flatTriangles.size();
+  if (parentidx != -1)
+  {
+    if (whichchild == 1)
+      bvh[parentidx].child1 = bvh.size();
+    else
+      bvh[parentidx].child2 = bvh.size();
+  }
+  bvh.push_back(node);
 }
 
-void grow(BVHNode &node, BVHNode toCapture)
-{
-  node.box[0] = min3(node.box[0], toCapture.box[0]);
-  node.box[1] = max3(node.box[1], toCapture.box[1]);
-}
-
-BVHNode makeBoxFromTriangle(Triangle triangle)
-{
-  BVHNode aabb;
-  aabb.box[0] = Vec3(
-      min(triangle.v0.x, triangle.v1.x, triangle.v2.x),
-      min(triangle.v0.y, triangle.v1.y, triangle.v2.y),
-      min(triangle.v0.z, triangle.v1.z, triangle.v2.z));
-  aabb.box[1] = Vec3(
-      max(triangle.v0.x, triangle.v1.x, triangle.v2.x),
-      max(triangle.v0.y, triangle.v1.y, triangle.v2.y),
-      max(triangle.v0.z, triangle.v1.z, triangle.v2.z));
-  return aabb;
-}
-
-Vec3 triBoxMP(Triangle triangle)
-{
-  BVHNode aabb;
-  aabb.box[0] = Vec3(
-      min(triangle.v0.x, triangle.v1.x, triangle.v2.x),
-      min(triangle.v0.y, triangle.v1.y, triangle.v2.y),
-      min(triangle.v0.z, triangle.v1.z, triangle.v2.z));
-  aabb.box[1] = Vec3(
-      max(triangle.v0.x, triangle.v1.x, triangle.v2.x),
-      max(triangle.v0.y, triangle.v1.y, triangle.v2.y),
-      max(triangle.v0.z, triangle.v1.z, triangle.v2.z));
-  return (aabb.span() / 2.0f + aabb.box[0]);
-}
-
-void addPrimitive(Bin &b, Triangle t)
-{
-  b.triangles.push_back(t);
-  grow(b.bb, makeBoxFromTriangle(t));
-}
-
-void swap(float *xp, float *yp)
-{
-  float temp = *xp;
-  *xp = *yp;
-  *yp = temp;
-}
-
-void swap(Triangle *xp, Triangle *yp)
-{
-  Triangle temp = *xp;
-  *xp = *yp;
-  *yp = temp;
-}
-
-const float traversalStepCost = 1.0f;
-const float primitiveIsectCost = 2.0f;
-
-void build(vector<BVHNode> &bvh, vector<Triangle> &triangles, vector<Triangle> &flatTriangles, BVHNode aabb, int parentidx, int whichchild, int depth)
+void build(vector<BVHNode> &bvh, vector<TriangleBox> &tris, vector<Triangle> &flatTriangles, vector<TriangleData> &flatTriangleData, AABB aabb, int parentidx, int whichchild, int depth)
 {
   if (depth < 4)
     cout << depth << endl;
@@ -162,279 +187,249 @@ void build(vector<BVHNode> &bvh, vector<Triangle> &triangles, vector<Triangle> &
   node.parent = parentidx;
   node.isLeaf = 0;
 
-  vector<Triangle> tris;
-  tris.clear();
-  for (Triangle tri : triangles)
+  // Copy parent first
+  node.box = aabb;
+
+  int triCount = tris.size();
+
+  float leafCost = primitiveIsectCost * triCount;
+
+  // End is reached
+  if (triCount < 4 || depth > 30)
   {
-    tris.push_back(tri);
-  }
-  node.box[0] = Vec3(aabb.box[0]);
-  node.box[1] = Vec3(aabb.box[1]);
-  //    cout << tris.size() << endl;
-
-  if (tris.size() < 4 || depth > 30)
-  {
-    //        cout << tris.size() << endl;
-    node.isLeaf = 1;
-
-    std::sort(tris.begin(), tris.end(), greater<Triangle>());
-
-    node.child1 = flatTriangles.size();
-    flatTriangles.insert(flatTriangles.end(), tris.begin(), tris.end());
-    node.child2 = flatTriangles.size();
-    if (parentidx != -1)
-    {
-      if (whichchild == 1)
-      {
-        bvh[parentidx].child1 = bvh.size();
-      }
-      else
-      {
-        bvh[parentidx].child2 = bvh.size();
-      }
-    }
-    bvh.push_back(node);
+    makeLeaf(bvh, tris, flatTriangles, flatTriangleData, node, parentidx, whichchild);
     return;
   }
 
-  float parentSA = node.sa();
+  float parentSA = node.box.sa();
 
-  Split bs = {-1, 0.0f, primitiveIsectCost * (float)tris.size(), -1};
-  //    printf("SurfArea of current node: %f\n", node.sa());
-  //    printf("Triangle count in current node: %d\n", tris.size());
-  //    printf("Cost of current node: %f\n", bs.cost);
+  Split bs = {-1, 0.0f, (float)triCount, -1};
 
-  BVHNode centroidbox;
-  centroidbox.box[0] = triBoxMP(tris[0]);
-  centroidbox.box[1] = Vec3(centroidbox.box[0]);
+  AABB centroidbox;
 
-  for (int i = 1; i < tris.size(); i++)
-  {
-    grow(centroidbox, triBoxMP(tris[i]));
-  }
+  for (TriangleBox tri : tris)
+    centroidbox.grow(tri.mp);
 
   Vec3 axiscomp = centroidbox.span();
 
   // float max = axiscomp[0];
-  // int axis = 0;
-  // for(int i = 1; i < 3; i++) {
-  //     if(axiscomp[i] > max) {
-  //         max = axiscomp[i];
-  //         axis = i;
-  //     }
-  // }
+  // int axis_opt = 0;
+  // for (int i = 1; i < 3; i++)
+  //   if (axiscomp[i] > max)
+  //   {
+  //     max = axiscomp[i];
+  //     axis_opt = i;
+  //   }
 
-  vector<vector<Triangle>> right_tris(3);
-  vector<vector<Triangle>> left_tris(3);
-  vector<vector<Bin>> bins(3);
-  vector<vector<BVHNode>> leftBoxes(3);
-  vector<vector<BVHNode>> rightBoxes(3);
-  vector<vector<int>> leftSums(3);
-  vector<vector<int>> rightSums(3);
+  int res = resMax;
 
+  bool altRes = false;
+  // triCount <= res;
+
+  vector<vector<float>> splits(3);
+
+  Bin bins[res];
+
+  AABB leftBoxes[res - 1];
+  AABB rightBoxes[res - 1];
+  int leftSums[res - 1];
+  int rightSums[res - 1];
+
+  AABB minLeftBox, minRightBox;
+  float minCost = INFINITY;
+  int minCostSplitBucket = -1;
+  int minCostSplitAxis;
+
+  // for (int axis = axis_opt; axis <= axis_opt; axis++)
   for (int axis = 0; axis < 3; axis++)
   {
 
-    bins[axis] = vector<Bin>(res);
-
-    float testinterval = axiscomp[axis] / ((float)res);
-    float testpos = centroidbox.box[0][axis] + testinterval;
-
-    right_tris[axis].clear();
-    left_tris[axis].clear();
-
-    bvhaxis = axis;
-
-    std::sort(tris.begin(), tris.end());
-
-    right_tris[axis].insert(right_tris[axis].end(), tris.begin(), tris.end());
-
-    int rps = right_tris[axis].size();
-
-    for (int i = 0; i < res; i++, testpos += testinterval)
+    if (altRes)
     {
+      bvhaxis = axis;
+      sort(tris.begin(), tris.end());
+      for (TriangleBox tri : tris)
+        if (splits[axis].size() < 1 || splits[axis].back() != tri.mp[axis])
+          splits[axis].push_back(tri.mp[axis]);
+      // splits[axis].pop_back();
+      res = splits[axis].size();
+    }
 
-      bins[axis][i] = initBin();
+    if (abs(axiscomp[axis]) < 1e-20f)
+      continue;
+    // printf("Binning for axis %d...\n", axis);
 
-      while (rps > 0 && right_tris[axis][0].boxMP(axis) <= testpos)
+    // printf("Reinitializing bins...\n");
+    for (int i = 0; i < res; i++)
+      bins[i] = Bin();
+    // printf("Reinitialized bins\n");
+
+    if (altRes)
+    {
+      // printf("Doing process for res = %d\n", res);
+      int j = 0;
+      for (int b = 0; b < res; b++)
       {
-        addPrimitive(bins[axis][i], right_tris[axis][0]);
-        right_tris[axis].erase(right_tris[axis].begin());
-        rps--;
+        int spl = splits[axis][b];
+        while (tris[j].mp[axis] <= spl)
+        {
+          addPrimitive(bins[b], tris[j]);
+          j++;
+        }
+      }
+      // for (; j < triCount; j++)
+      // {
+      //   addPrimitive(bins[res - 1], tris[j]);
+      // }
+    }
+    else
+    {
+      for (TriangleBox tri : tris)
+      {
+        // printf("Calculating b with %f, %f, and %f...\n", tri.mp[axis], centroidbox.box[0][axis], axiscomp[axis]);
+        int b = res * ((tri.mp[axis] - centroidbox.box[0][axis]) / axiscomp[axis]);
+        // printf("Calculated b\n");
+        if (b == res)
+          b = res - 1;
+        // printf("Adding primitive to %d...\n", b);
+        addPrimitive(bins[b], tri);
+        // printf("Added primitive to %d\n", b);
       }
     }
 
-    while (rps > 0)
-    {
-      addPrimitive(bins[axis][res - 1], right_tris[axis][0]);
-      right_tris[axis].erase(right_tris[axis].begin());
-      rps--;
-    }
+    // printf("Binned for axis %d\n", axis);
 
-    leftBoxes[axis] = vector<BVHNode>(res - 1);
-    rightBoxes[axis] = vector<BVHNode>(res - 1);
-    leftSums[axis] = vector<int>(res - 1);
-    rightSums[axis] = vector<int>(res - 1);
-    for (int i = 0; i < res - 1; i++)
-    {
-      BVHNode lnode;
-      leftBoxes[axis][i] = lnode;
-      BVHNode rnode;
-      rightBoxes[axis][i] = rnode;
-    }
+    // printf("Fitting boxes for axis %d...\n", axis);
 
-    leftBoxes[axis][0].box[0] = Vec3(bins[axis][0].bb.box[0]);
-    leftBoxes[axis][0].box[1] = Vec3(bins[axis][0].bb.box[1]);
-    leftSums[axis][0] = bins[axis][0].triangles.size();
+    leftBoxes[0] = AABB(bins[0].bb.box);
+    leftSums[0] = bins[0].count;
 
-    rightBoxes[axis][res - 2].box[0] = Vec3(bins[axis][res - 1].bb.box[0]);
-    rightBoxes[axis][res - 2].box[1] = Vec3(bins[axis][res - 1].bb.box[1]);
-    rightSums[axis][res - 2] = bins[axis][res - 1].triangles.size();
+    rightBoxes[res - 2] = AABB(bins[res - 1].bb.box);
+    rightSums[res - 2] = bins[res - 1].count;
 
     for (int i = 1; i < res - 1; i++)
     {
-      leftBoxes[axis][i].box[0] = Vec3(leftBoxes[axis][i - 1].box[0]);
-      leftBoxes[axis][i].box[1] = Vec3(leftBoxes[axis][i - 1].box[1]);
-      grow(leftBoxes[axis][i], bins[axis][i].bb);
-      leftSums[axis][i] = leftSums[axis][i - 1] + bins[axis][i].triangles.size();
+      leftBoxes[i] = AABB(leftBoxes[i - 1].box);
+      leftBoxes[i].grow(bins[i].bb.box);
+      leftSums[i] = leftSums[i - 1] + bins[i].count;
 
-      rightBoxes[axis][res - i - 2].box[0] = Vec3(rightBoxes[axis][res - i - 1].box[0]);
-      rightBoxes[axis][res - i - 2].box[1] = Vec3(rightBoxes[axis][res - i - 1].box[1]);
-      grow(rightBoxes[axis][res - i - 2], bins[axis][res - i - 1].bb);
-      rightSums[axis][res - i - 2] = rightSums[axis][res - i - 1] + bins[axis][res - i - 1].triangles.size();
+      rightBoxes[res - i - 2] = AABB(rightBoxes[res - i - 1].box);
+      rightBoxes[res - i - 2].grow(bins[res - i - 1].bb);
+      rightSums[res - i - 2] = rightSums[res - i - 1] + bins[res - i - 1].count;
     }
 
-    testpos = node.box[0][axis] + testinterval;
+    // printf("Fitted boxes for axis %d\n", axis);
 
-    for (int i = 0; i < res - 1; i++, testpos += testinterval)
+    // printf("Calculating costs for axis %d...\n", axis);
+
+    float cost[res - 1];
+    for (int i = 0; i < res - 1; ++i)
     {
-      if (leftSums[axis][i] >= 1 && rightSums[axis][i] >= 1)
-      {
-        float nscost = traversalStepCost + primitiveIsectCost / parentSA * (leftBoxes[axis][i].sa() * leftSums[axis][i] + rightBoxes[axis][i].sa() * rightSums[axis][i]);
-        Split curr = {axis, testpos, nscost, i};
-        setIfBetterSplit(bs, curr);
-      }
-    }
-  }
-
-  int axis = bs.axis;
-
-  for (int i = 0; i < 3; i++)
-  {
-    if (i != axis)
-    {
-      right_tris[i].clear();
-      left_tris[i].clear();
-      bins[i].clear();
-      leftBoxes[i].clear();
-      rightBoxes[i].clear();
-    }
-    leftSums[i].clear();
-    rightSums[i].clear();
-  }
-  leftSums.clear();
-  rightSums.clear();
-
-  if (bs.axis == -1)
-  {
-
-    node.isLeaf = 1;
-
-    std::sort(tris.begin(), tris.end(), greater<Triangle>());
-
-    node.child1 = flatTriangles.size();
-    flatTriangles.insert(flatTriangles.end(), tris.begin(), tris.end());
-    node.child2 = flatTriangles.size();
-    if (parentidx != -1)
-    {
-      if (whichchild == 1)
-      {
-        bvh[parentidx].child1 = bvh.size();
-      }
+      if (leftSums[i] >= 1 && rightSums[i] >= 1)
+        cost[i] = traversalStepCost + primitiveIsectCost * (leftSums[i] * leftBoxes[i].sa() + rightSums[i] * rightBoxes[i].sa()) / parentSA;
       else
-      {
-        bvh[parentidx].child2 = bvh.size();
-      }
+        cost[i] = INFINITY;
     }
-    bvh.push_back(node);
+
+    for (int i = 0; i < res - 1; ++i)
+      if (cost[i] < minCost)
+      {
+        minCost = cost[i];
+        minCostSplitBucket = i;
+        minCostSplitAxis = axis;
+        minLeftBox = leftBoxes[i];
+        minRightBox = rightBoxes[i];
+      }
+
+    // printf("Calculated costs for axis %d\n", axis);
+  }
+
+  if (leafCost <= 255 && minCost >= leafCost)
+  {
+    makeLeaf(bvh, tris, flatTriangles, flatTriangleData, node, parentidx, whichchild);
     return;
   }
 
-  node.isLeaf = bs.axis << 1;
+  int axis = minCostSplitAxis;
+  node.isLeaf = 0;
 
   int thisidx = bvh.size();
   bvh.push_back(node);
   if (parentidx != -1)
   {
     if (whichchild == 1)
-    {
       bvh[parentidx].child1 = thisidx;
-    }
     else
-    {
       bvh[parentidx].child2 = thisidx;
-    }
   }
 
-  //    printf("Split. Cost: %f\n", bs.cost);
+  AABB leftAABB = minLeftBox, rightAABB = minRightBox;
 
-  left_tris[axis].clear();
-  right_tris[axis].clear();
+  vector<TriangleBox>::iterator mid;
+  if (altRes)
+  {
+    mid = partition(tris.begin(), tris.end(),
+                    [=](const TriangleBox &tri)
+                    {
+                      return tri.mp[axis] < splits[axis][minCostSplitBucket - 1];
+                    });
+  }
+  else
+  {
+    mid = partition(tris.begin(), tris.end(),
+                    [=](const TriangleBox &tri)
+                    {
+                      int b = res * ((tri.mp[axis] - centroidbox.box[0][axis]) / axiscomp[axis]);
+                      if (b == res)
+                        b = res - 1;
+                      return b <= minCostSplitBucket;
+                    });
+  }
 
-  int b = 0;
-  for (; b < bs.binId + 1; b++)
-    left_tris[axis].insert(left_tris[axis].end(), bins[axis][b].triangles.begin(), bins[axis][b].triangles.end());
-  for (; b < res; b++)
-    right_tris[axis].insert(right_tris[axis].end(), bins[axis][b].triangles.begin(), bins[axis][b].triangles.end());
+  vector<TriangleBox> leftTris(tris.begin(), mid);
+  vector<TriangleBox> rightTris(mid, tris.end());
 
-  bins[axis].clear();
-  bins.clear();
+  build(bvh, leftTris, flatTriangles, flatTriangleData, leftAABB, thisidx, 1, depth + 1);
 
-  BVHNode tempL;
-  tempL.box[0] = Vec3(leftBoxes[axis][bs.binId].box[0]);
-  tempL.box[1] = Vec3(leftBoxes[axis][bs.binId].box[1]);
-
-  leftBoxes[axis].clear();
-  leftBoxes.clear();
-
-  build(bvh, left_tris[axis], flatTriangles, tempL, thisidx, 1, depth + 1);
-  left_tris[axis].clear();
-  left_tris.clear();
-
-  BVHNode tempR;
-  tempR.box[0] = Vec3(rightBoxes[axis][bs.binId].box[0]);
-  tempR.box[1] = Vec3(rightBoxes[axis][bs.binId].box[1]);
-
-  rightBoxes[axis].clear();
-  rightBoxes.clear();
-
-  build(bvh, right_tris[axis], flatTriangles, tempR, thisidx, 2, depth + 1);
-  right_tris[axis].clear();
-  right_tris.clear();
+  build(bvh, rightTris, flatTriangles, flatTriangleData, rightAABB, thisidx, 2, depth + 1);
 }
 
-vector<BVHNode> build(vector<Triangle> &triangles)
+vector<BVHNode> build(vector<Triangle> &triangles, vector<TriangleData> &triangleData)
 {
   vector<BVHNode> bvh;
   bvh.clear();
   vector<Triangle> flatTriangles;
   flatTriangles.clear();
+  vector<TriangleData> flatTriangleData;
+  flatTriangleData.clear();
 
-  BVHNode aabb = makeBoxFromTriangle(triangles[0]);
-  aabb.isLeaf = 0;
-  aabb.parent = -1;
-  for (int i = 1; i < triangles.size(); i++)
+  vector<TriangleBox> tris;
+  tris.clear();
+  for (int i = 0; i < triangles.size(); i++)
   {
-    grow(aabb, makeBoxFromTriangle(triangles[i]));
+    tris.push_back(TriangleBox(triangles[i], boxFromTriangle(triangles[i]), triangleData[i]));
   }
-  build(bvh, triangles, flatTriangles, aabb, -1, 1, 0);
+
+  AABB aabb = tris[0].box;
+  for (int i = 1; i < tris.size(); i++)
+  {
+    aabb.grow(tris[i].box);
+  }
+  build(bvh, tris, flatTriangles, flatTriangleData, aabb, -1, 1, 0);
+  tris.clear();
   triangles.clear();
   triangles.insert(triangles.end(), flatTriangles.begin(), flatTriangles.end());
+  triangleData.clear();
+  triangleData.insert(triangleData.end(), flatTriangleData.begin(), flatTriangleData.end());
 
   for (Triangle &t : triangles)
   {
     makeRenderReady(t);
   }
+  // for (BVHNode node : bvh)
+  // {
+
+  // }
 
   //    vector<int> parentlist;
   //    parentlist.clear();
