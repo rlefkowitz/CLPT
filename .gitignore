@@ -1,0 +1,26 @@
+# CMake build directory
+build/
+
+# CMake generated files
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+Makefile
+
+# Compiled binaries
+*.exe
+*.out
+
+# Object files
+*.o
+*.obj
+
+# IDE-specific files
+.vscode/
+.idea/
+
+# Dependency directories
+vendor/
+
+# macOS specific files
+*.DS_Store

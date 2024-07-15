@@ -247,7 +247,11 @@ bool intersect_sphere(__global Sphere* sphere, const Ray* ray, float3* point, fl
 }
 
 inline bool intersect_triangle(__global Triangle *triangle, const Ray* ray, float3* point, float3* normal, float* t) {
-
+    printf("Trying to intersect triangle:\n(%f, %f, %f),\n(%f, %f, %f),\n(%f, %f, %f)\nwith Ray:\n(%f, %f, %f),\n(%f, %f, %f)\n",
+         triangle->v0.x, triangle->v0.y, triangle->v0.z, triangle->v1.x,
+         triangle->v1.y, triangle->v1.z, triangle->v2.x, triangle->v2.y,
+         triangle->v2.z, ray->origin.x, ray->origin.y, ray->origin.z,
+         ray->dir.x, ray->dir.y, ray->dir.z);
     float3 pvec = cross(ray->dir, triangle->v2);
     float invDet = native_recip(dot(triangle->v1, pvec));
 
@@ -426,8 +430,17 @@ void intersect_bvh(__global Triangle* triangles, __global BVHNode* nodes, const 
             
             hit1 = b.s0 <= b.s2;
             hit2 = b.s1 <= b.s3;
-            dist1 = hit1 ? b.s0 : INF;
-            dist2 = hit2 ? b.s1 : INF;
+            if (hit1) {
+                dist1 = b.s0;
+            } else {
+                dist1 = INF;
+            }
+
+            if (hit2) {
+                dist2 = b.s1;
+            } else {
+                dist2 = INF;
+            }
 
             goingUp = !hit1 && !hit2; /* hits neither, go back up the tree */
             if(!goingUp) {
