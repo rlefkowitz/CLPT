@@ -27,7 +27,8 @@ typedef struct Ray {
 } Ray;
 
 typedef struct BVHNode {
-    float8 box;
+    float4 lo;
+    float4 hi;
     int parent, child1, child2, isLeaf;
     int dummy[4];
 } BVHNode;
@@ -247,11 +248,6 @@ bool intersect_sphere(__global Sphere* sphere, const Ray* ray, float3* point, fl
 }
 
 inline bool intersect_triangle(__global Triangle *triangle, const Ray* ray, float3* point, float3* normal, float* t) {
-    printf("Trying to intersect triangle:\n(%f, %f, %f),\n(%f, %f, %f),\n(%f, %f, %f)\nwith Ray:\n(%f, %f, %f),\n(%f, %f, %f)\n",
-         triangle->v0.x, triangle->v0.y, triangle->v0.z, triangle->v1.x,
-         triangle->v1.y, triangle->v1.z, triangle->v2.x, triangle->v2.y,
-         triangle->v2.z, ray->origin.x, ray->origin.y, ray->origin.z,
-         ray->dir.x, ray->dir.y, ray->dir.z);
     float3 pvec = cross(ray->dir, triangle->v2);
     float invDet = native_recip(dot(triangle->v1, pvec));
 
@@ -288,8 +284,8 @@ inline bool intersect_ground(const Ray* ray, float3* point, float3* normal, floa
 
 inline bool intersect_aabb(__global BVHNode* b, const Ray* r, float* t) {
     float3 invD = r->inv_dir;
-    float3 t0s = (b->box.lo.xyz - r->origin) * invD;
-    float3 t1s = (b->box.hi.xyz - r->origin) * invD;
+    float3 t0s = (b->lo.xyz - r->origin) * invD;
+    float3 t1s = (b->hi.xyz - r->origin) * invD;
 
     float3 tsmaller = fmin(t0s, t1s);
     float3 tbigger = fmax(t0s, t1s);
@@ -302,8 +298,8 @@ inline bool intersect_aabb(__global BVHNode* b, const Ray* r, float* t) {
 
 bool intersect_aabb_lw(__global BVHNode* b, const Ray* r, float* t) {
     float3 invD = r->inv_dir;
-    float3 t0s = (b->box.lo.xyz - r->origin) * invD;
-    float3 t1s = (b->box.hi.xyz - r->origin) * invD;
+    float3 t0s = (b->lo.xyz - r->origin) * invD;
+    float3 t1s = (b->hi.xyz - r->origin) * invD;
 
     float3 tsmaller = fmin(t0s, t1s);
 
@@ -314,8 +310,8 @@ bool intersect_aabb_lw(__global BVHNode* b, const Ray* r, float* t) {
 
 inline float intersect_aabb_dist(__global BVHNode* b, const Ray* r, float* t) {
     float3 invD = r->inv_dir;
-    float3 t0s = (b->box.lo.xyz - r->origin) * invD;
-    float3 t1s = (b->box.hi.xyz - r->origin) * invD;
+    float3 t0s = (b->lo.xyz - r->origin) * invD;
+    float3 t1s = (b->hi.xyz - r->origin) * invD;
 
     float3 tsmaller = fmin(t0s, t1s);
     float3 tbigger = fmax(t0s, t1s);
@@ -327,7 +323,7 @@ inline float intersect_aabb_dist(__global BVHNode* b, const Ray* r, float* t) {
 }
 
 inline float4 hit_simul(__global BVHNode* b0, __global BVHNode* b1, float16 invD, float16 origin, float* t) {
-    float16 a = (float16)(b0->box, b1->box);
+    float16 a = (float16)(b0->lo, b0->hi, b1->lo, b1->hi);
     float16 b = (a.s012389AB4567CDEF - origin) * invD;
 
     float16 c = (float16)(fmin(b.lo, b.hi), fmax(b.lo, b.hi));
@@ -365,8 +361,8 @@ void intersect_bvh(__global Triangle* triangles, __global BVHNode* nodes, const 
     int child2_mod;           /* TODO: what was this */
     float dist1;
     float dist2;
-    float hit1;
-    float hit2;
+    bool hit1;
+    bool hit2;
     bool swapping;
     bool reverse;
     int i;
@@ -411,7 +407,7 @@ void intersect_bvh(__global Triangle* triangles, __global BVHNode* nodes, const 
             currentIdx = goingUp ? currentIdx : child2_mod;
         } else if(current.isLeaf != 1) {
             /* intersect both simultaneously */
-            b = (float16)(nodes[child1].box, nodes[child2].box);
+            b = (float16)(nodes[child1].lo, nodes[child1].hi, nodes[child2].lo, nodes[child2].hi);
             /* restructure b: (c1.box[0], c1.box[1], c2.box[0], c2.box[1]) 
                                 -> (c1.box[0], c2.box[0], c1.box[1], c2.box[1]) */
             b = (b.s012389AB4567CDEF - origin) * invD;
@@ -421,7 +417,7 @@ void intersect_bvh(__global Triangle* triangles, __global BVHNode* nodes, const 
             /* insert constants to compare with */
             b.s37 = eps;
             b.sBF = *t;
-
+            
             /* run vectorized min/max so b.s0123 = (tmin0, tmin1, tmax0, tmax1) */
             b.s0123 = fmax(b.s0246, b.s1357);
             b.s4567 = fmin(b.s8ACE, b.s9BDF);
